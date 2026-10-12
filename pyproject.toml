@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "methyldiver"
+version = "1.0.0"
+description = "Complete-read methylation level, pattern entropy, and epiallele distance"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["pysam>=0.22"]
+
+[project.optional-dependencies]
+arrays = ["numpy>=1.23"]
+
+[project.scripts]
+methyldiver = "methyldiver.cli:main"
+
+[project.urls]
+Repository = "https://github.com/lxd98/MethylDiver"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+methyldiver = ["py.typed"]

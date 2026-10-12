@@ -1,0 +1,45 @@
+# Local Python environments and generated build/test files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local runs, temporary files, and research data
+outputs/
+runs/
+tmp/
+*.bam
+*.bai
+*.cram
+*.crai
+*.csi
+*.sam
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.fa
+*.fa.gz
+*.fasta
+*.fasta.gz
+*.fai
+*.gzi
+*.parquet
+
+# Machine-local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+
+# Local development notes and reports
+Readme/
+provenance/

@@ -1,0 +1,7 @@
+{
+  "origin": "epidec 0.1.0 metrics module",
+  "snapshot": "legacy_metrics.py",
+  "baseline_metrics_sha256": "2fed645f37b0cc2007074d8cac1d201d46f794bacb013bbc019b864c837ecde3",
+  "purpose": "Differential regression tests for beta, normalized Shannon entropy, and square-root base-2 Jensen-Shannon divergence",
+  "absolute_tolerance": 1e-12
+}

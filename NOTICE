@@ -1,0 +1,9 @@
+MethylDiver derives its baseline metric definitions and coordinate/pattern
+conventions from the CK-AML epidec 0.1.0 implementation.
+
+An unchanged copy of the original scalar metric module is retained at
+tests/fixtures/legacy_metrics.py for differential regression testing.
+Its SHA-256 is recorded in tests/fixtures/baseline.json.
+
+The supplied baseline source did not include a license grant. No open-source
+redistribution license is asserted for this repository.
