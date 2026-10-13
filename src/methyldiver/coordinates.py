@@ -3,6 +3,10 @@
 from collections.abc import Iterable, Iterator
 from numbers import Integral
 
+MAX_UNIT_SIZE = 10
+# Bound all samples' dense count vectors in one extraction result.
+MAX_DENSE_COUNT_CELLS = 2_000_000
+
 
 def _coordinate(value: int, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, Integral) or value < 0:
@@ -11,8 +15,8 @@ def _coordinate(value: int, name: str) -> int:
 
 
 def _unit_size(k: int) -> int:
-    if isinstance(k, bool) or not isinstance(k, Integral) or k not in (3, 4):
-        raise ValueError("Supported CpG-unit sizes are 3 and 4.")
+    if isinstance(k, bool) or not isinstance(k, Integral) or not 1 <= k <= MAX_UNIT_SIZE:
+        raise ValueError(f"N must be an integer from 1 to {MAX_UNIT_SIZE} (default: 3).")
     return int(k)
 
 

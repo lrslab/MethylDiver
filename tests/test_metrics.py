@@ -28,16 +28,16 @@ class TestMetrics(unittest.TestCase):
         result = compare_counts(a, b)
         self.assertAlmostEqual(result["delta_beta"], -0.5333333333333333)
         self.assertAlmostEqual(result["delta_entropy"], 0.07150823425755515)
-        self.assertAlmostEqual(result["D_epi"], 0.7309379165994421)
+        self.assertAlmostEqual(result["epiallele_distance"], 0.7309379165994421)
 
     def test_all_pure_patterns_and_uniform(self):
-        for k in (3, 4):
+        for k in (1, 2, 3, 4, 5):
             for pattern in range(2 ** k):
                 counts = [0] * (2 ** k)
                 counts[pattern] = 10
                 self.assertEqual(metrics(counts)["beta"], pattern.bit_count() / k)
                 self.assertEqual(metrics(counts)["entropy"], 0)
-                self.assertEqual(compare_counts(counts, counts)["D_epi"], 0)
+                self.assertEqual(compare_counts(counts, counts)["epiallele_distance"], 0)
             self.assertEqual(metrics([1] * (2 ** k))["entropy"], 1)
 
     def test_hidden_redistribution(self):
@@ -45,10 +45,22 @@ class TestMetrics(unittest.TestCase):
         b = [0, 10, 0, 0, 0, 0, 10, 0]
         self.assertEqual(metrics(a)["beta"], 0.5)
         self.assertEqual(metrics(a)["entropy"], 1 / 3)
-        self.assertEqual(compare_counts(a, b), {"delta_beta": 0, "delta_entropy": 0, "D_epi": 1})
+        self.assertEqual(compare_counts(a, b), {"delta_beta": 0, "delta_entropy": 0, "epiallele_distance": 1})
+
+    def test_general_unit_size_normalization_and_extremes(self):
+        for n in range(1, 11):
+            with self.subTest(n=n):
+                a, b = [0] * (2 ** n), [0] * (2 ** n)
+                a[0], b[-1] = 10, 10
+                self.assertEqual(compare_counts(a, b),
+                                 {"delta_beta": 1, "delta_entropy": 0, "epiallele_distance": 1})
+                a[-1] = 10
+                self.assertEqual(metrics(a)["beta"], 0.5)
+                self.assertAlmostEqual(metrics(a)["entropy"], 1 / n)
+                self.assertEqual(metrics([1] * (2 ** n))["entropy"], 1)
 
     def test_empty_is_missing(self):
-        for k in (3, 4):
+        for k in (1, 2, 3, 4, 5, 10):
             empty, full = [0] * (2 ** k), [1] * (2 ** k)
             self.assertEqual(metrics(empty), {"n_complete_reads": 0, "beta": None, "entropy": None})
             for a, b in ((empty, full), (full, empty), (empty, empty)):
@@ -58,7 +70,7 @@ class TestMetrics(unittest.TestCase):
         for bad in (True, False, -1, 0.5, math.nan, math.inf, -math.inf, "1", None, 1j, [1]):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 metrics([bad] + [0] * 7)
-        for counts in (None, 2, [], [1] * 7, [1] * 9, [1] * 32):
+        for counts in (None, 2, [], [1] * 7, [1] * 9, [1], [1] * 2048):
             with self.subTest(counts=counts), self.assertRaises(ValueError):
                 metrics(counts)
         with self.assertRaises(ValueError):
@@ -83,23 +95,24 @@ class TestMetrics(unittest.TestCase):
                 a = [rng.randrange(1000) for _ in range(2 ** k)]
                 b = [rng.randrange(1000) for _ in range(2 ** k)]
                 result, expected = compare_counts(a, b), baseline.compare_counts(a, b)
+                expected["epiallele_distance"] = expected.pop("D_epi")
                 reverse = compare_counts(b, a)
                 scaled = compare_counts([x * 3 for x in a], [x * 7 for x in b])
                 for key, value in result.items():
                     self.assertAlmostEqual(value, expected[key], delta=1e-12)
                     self.assertAlmostEqual(value, scaled[key], delta=1e-12)
-                    self.assertAlmostEqual(value, reverse[key] * (1 if key == "D_epi" else -1), delta=1e-12)
+                    self.assertAlmostEqual(value, reverse[key] * (1 if key == "epiallele_distance" else -1), delta=1e-12)
                 sample = metrics(a)
                 for key, value in sample.items():
                     self.assertAlmostEqual(value, baseline.metrics(a)[key], delta=1e-12)
                 self.assertTrue(0 <= sample["beta"] <= 1)
                 self.assertTrue(0 <= sample["entropy"] <= 1)
-                self.assertTrue(0 <= result["D_epi"] <= 1)
+                self.assertTrue(0 <= result["epiallele_distance"] <= 1)
                 # Relabel patterns together: H and distance are invariant, beta need not be.
                 order = list(range(2 ** k))
                 rng.shuffle(order)
                 permuted = compare_counts([a[i] for i in order], [b[i] for i in order])
-                self.assertAlmostEqual(result["D_epi"], permuted["D_epi"], delta=1e-12)
+                self.assertAlmostEqual(result["epiallele_distance"], permuted["epiallele_distance"], delta=1e-12)
                 self.assertAlmostEqual(result["delta_entropy"], permuted["delta_entropy"], delta=1e-12)
 
     def test_baseline_snapshot_fingerprint(self):

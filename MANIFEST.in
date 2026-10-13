@@ -1,5 +1,6 @@
 include NOTICE
-recursive-include examples *.tsv *.py
+include CHANGELOG.md
+recursive-include examples *.tsv *.py *.R
 recursive-include tests *.py *.json
 prune provenance
 prune Readme

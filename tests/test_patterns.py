@@ -5,8 +5,8 @@ from methyldiver.coordinates import canonical_cpg, cpg_positions, sliding_units,
 
 
 class TestPatterns(unittest.TestCase):
-    def test_binary_order_both_sizes(self):
-        for k in (3, 4):
+    def test_binary_order_supported_sizes(self):
+        for k in (1, 2, 3, 4, 5):
             patterns = [format(i, f"0{k}b") for i in range(2 ** k) for _ in range(i)]
             result = count_patterns(patterns, k)
             self.assertEqual(result["counts"], list(range(2 ** k)))
@@ -38,10 +38,10 @@ class TestPatterns(unittest.TestCase):
         for value in (-1, 2, True, False, 0.0, "1"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 read_pattern({1: value}, (1, 2, 3))
-        for unit in ((1, 1, 3), (3, 2, 1), (-1, 2, 3), (1, 2)):
+        for unit in ((1, 1, 3), (3, 2, 1), (-1, 2, 3), ()):
             with self.assertRaises(ValueError):
                 read_pattern({}, unit)
-        for k in (2, 5, True, 3.0):
+        for k in (0, 11, True, 3.0):
             with self.assertRaises(ValueError):
                 count_patterns([], k)
 

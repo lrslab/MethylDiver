@@ -9,6 +9,14 @@ from collections.abc import Iterable
 from numbers import Integral, Real
 from typing import TypedDict
 
+from .coordinates import _unit_size
+
+
+def _count_unit_size(length):
+    if length < 2 or length & (length - 1):
+        raise ValueError("Supply exactly 2^N counts, including zero-count patterns (N from 1 to 10).")
+    return _unit_size(length.bit_length() - 1)
+
 
 class SampleMetrics(TypedDict):
     n_complete_reads: int
@@ -19,11 +27,11 @@ class SampleMetrics(TypedDict):
 class ComparisonMetrics(TypedDict):
     delta_beta: float | None
     delta_entropy: float | None
-    D_epi: float | None
+    epiallele_distance: float | None
 
 
 def checked_counts(counts: Iterable[Real]) -> tuple[tuple[int, ...], int]:
-    """Validate eight or sixteen finite, nonnegative integer-valued counts.
+    """Validate 2^N finite, nonnegative integer-valued counts (N from 1 to 10).
 
     Integral floats are accepted for compatibility with the original baseline;
     booleans, strings, missing values, and fractional counts are rejected.
@@ -32,9 +40,8 @@ def checked_counts(counts: Iterable[Real]) -> tuple[tuple[int, ...], int]:
     try:
         values = tuple(counts)
     except TypeError as exc:
-        raise ValueError("Counts must be an iterable of 8 or 16 numbers.") from exc
-    if len(values) not in (8, 16):
-        raise ValueError("Expected 8 counts for 3 CpGs or 16 counts for 4 CpGs.")
+        raise ValueError("Counts must be an iterable of 2^N numbers (N from 1 to 10).") from exc
+    k = _count_unit_size(len(values))
     result = []
     for i, value in enumerate(values):
         if isinstance(value, bool) or not isinstance(value, Real):
@@ -48,7 +55,7 @@ def checked_counts(counts: Iterable[Real]) -> tuple[tuple[int, ...], int]:
         if number < 0:
             raise ValueError(f"Count {i} must be nonnegative.")
         result.append(number)
-    return tuple(result), len(values).bit_length() - 1
+    return tuple(result), k
 
 
 def _metrics(counts: tuple[int, ...], k: int) -> SampleMetrics:
@@ -84,7 +91,7 @@ def compare_counts(control: Iterable[Real], test: Iterable[Real]) -> ComparisonM
         raise ValueError("Comparison requires identical CpG-unit size.")
     na, nb = sum(a), sum(b)
     if not na or not nb:
-        return {"delta_beta": None, "delta_entropy": None, "D_epi": None}
+        return {"delta_beta": None, "delta_entropy": None, "epiallele_distance": None}
     am, bm = _metrics(a, k), _metrics(b, k)
     terms = []
     for ca, cb in zip(a, b):
@@ -101,5 +108,5 @@ def compare_counts(control: Iterable[Real], test: Iterable[Real]) -> ComparisonM
     return {
         "delta_beta": bm["beta"] - am["beta"],
         "delta_entropy": bm["entropy"] - am["entropy"],
-        "D_epi": math.sqrt(max(0.0, min(1.0, jsd))),
+        "epiallele_distance": math.sqrt(max(0.0, min(1.0, jsd))),
     }

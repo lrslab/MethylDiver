@@ -74,7 +74,7 @@ class TestModBAM(unittest.TestCase):
         self.assertEqual(sample["counts"], [0, 0, 0, 0, 0, 4, 0, 0])
         self.assertEqual(sample["n_candidate_reads"], 4)
         self.assertEqual(sample["beta"], 2 / 3)
-        self.assertEqual(result["units"][0]["comparison"]["D_epi"], 0)
+        self.assertEqual(result["units"][0]["comparison"]["epiallele_distance"], 0)
 
     def test_known_distribution_shift_and_depth_flag(self):
         control = self.bam("control.bam", [make_read("c0", "000"), make_read("c1", "111", True)])
@@ -85,7 +85,7 @@ class TestModBAM(unittest.TestCase):
         self.assertEqual((unit["start"], unit["end"]), (2, 12))
         self.assertEqual(unit["control"]["beta"], 0.5)
         self.assertEqual(unit["control"]["entropy"], 1 / 3)
-        self.assertEqual(unit["comparison"], {"delta_beta": 0, "delta_entropy": 0, "D_epi": 1})
+        self.assertEqual(unit["comparison"], {"delta_beta": 0, "delta_entropy": 0, "epiallele_distance": 1})
         self.assertFalse(unit["passes_min_depth"])
         self.assertEqual(unit["control"]["n_complete_reads"], 2)
 
@@ -217,7 +217,7 @@ class TestModBAM(unittest.TestCase):
         bam = self.bam("empty.bam", [])
         unit = self.analyze(bam)["units"][0]
         self.assertIsNone(unit["control"]["callable_fraction"])
-        self.assertIsNone(unit["comparison"]["D_epi"])
+        self.assertIsNone(unit["comparison"]["epiallele_distance"])
         result = self.analyze(bam, regions=[Region("chrToy", 0, 11)])
         # Last C is at 10, but its full CG dyad ends at 12 and is not contained.
         self.assertEqual(result["manifest"]["regions"][0]["n_reference_cpgs"], 2)
@@ -267,7 +267,13 @@ class TestModBAM(unittest.TestCase):
             row = next(csv.DictReader(handle, delimiter="\t"))
         self.assertEqual(row["cpg_anchors"], "2,6,10")
         self.assertEqual(float(row["control_beta"]), 2 / 3)
-        manifest = json.loads((output / "run.json").read_text())
+        with (output / "three_metrics.tsv").open(newline="") as handle:
+            summary_row = next(csv.DictReader(handle, delimiter="\t"))
+        self.assertEqual(summary_row, {name: row[name] for name in summary_row})
+        self.assertEqual(summary_row["cpg_anchors"], "2,6,10")
+        self.assertIn("\t2,6,10\t", (output / "three_metrics.tsv").read_text())
+        self.assertNotIn('"2,6,10"', (output / "three_metrics.tsv").read_text())
+        manifest = json.loads((output / "analysis_summary.json").read_text())
         self.assertEqual(manifest["status"], "complete")
         for name, identity in manifest["outputs"].items():
             self.assertEqual(identity["sha256"], hashlib.sha256((output / name).read_bytes()).hexdigest())
@@ -278,6 +284,48 @@ class TestModBAM(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             write_analysis(result, output)
 
+    def test_tsv_omits_missing_metrics_but_retains_valid_low_depth(self):
+        bam = self.bam("one_read.bam", [make_read()])
+        empty = self.bam("no_reads.bam", [])
+        for test, expected in ((empty, 0), (bam, 1)):
+            result = self.analyze(bam, test, min_depth=5)
+            output = self.root / f"csv_{expected}"
+            write_analysis(result, output)
+            with (output / "three_metrics.tsv").open() as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(len(rows), expected)
+            self.assertTrue(all("NA" not in row.values() for row in rows))
+            with (output / "metrics.tsv").open() as handle:
+                full = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(len(full), 1)
+            self.assertEqual(full[0]["passes_min_depth"], "0")
+            manifest = json.loads((output / "analysis_summary.json").read_text())
+            self.assertEqual(manifest["outputs"]["three_metrics.tsv"]["rows"], expected)
+            self.assertEqual(manifest["outputs"]["three_metrics.tsv"]["excluded_missing_metrics"], 1 - expected)
+
+    def test_custom_sample_labels_for_region_cli(self):
+        bam = self.bam("labels.bam", [make_read()])
+        output = self.root / "labels"
+        base = [sys.executable, "-m", "methyldiver", "compare", "--control", str(bam),
+                "--test", str(bam), "--reference", str(self.reference), "--region", f"chrToy:0-{len(SEQUENCE)}",
+                "--output", str(output)]
+        run = subprocess.run(base + ["--control-label", "DMSO", "--test-label", "DEC"], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        with (output / "three_metrics.tsv").open() as handle:
+            row = next(csv.DictReader(handle, delimiter="\t"))
+        self.assertEqual(float(row["DMSO_beta"]), 2 / 3)
+        self.assertEqual(row["DMSO_beta"], row["DEC_beta"])
+        self.assertEqual(float(row["delta_beta"]), 0)
+        self.assertIn("DEC_entropy", row)
+        manifest = json.loads((output / "analysis_summary.json").read_text())
+        self.assertEqual(manifest["sample_labels"], {"control": "DMSO", "test": "DEC"})
+        bad_base = base[:-1] + [str(self.root / "bad_labels")]
+        for labels in (("same", "same"), ("SAME", "same"), ("delta", "test"), ("bad label", "DEC"), ("", "DEC")):
+            run = subprocess.run(bad_base + ["--control-label", labels[0], "--test-label", labels[1]], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 2, run.stderr)
+            self.assertNotIn("Traceback", run.stderr)
+            self.assertFalse((self.root / "bad_labels").exists())
+
     def test_complete_cli_example_three_and_four_cpg(self):
         spec = importlib.util.spec_from_file_location("make_modbam_example", ROOT / "examples/make_modbam_example.py")
         example = importlib.util.module_from_spec(spec)
@@ -285,16 +333,16 @@ class TestModBAM(unittest.TestCase):
         inputs = example.create_example(self.root / "example")
         for k in (3, 4):
             output = self.root / f"cli_k{k}"
-            command = [sys.executable, "-m", "methyldiver", "analyze", "--control", str(inputs / "control.bam"),
+            command = [sys.executable, "-m", "methyldiver", "compare", "--control", str(inputs / "control.bam"),
                        "--test", str(inputs / "test.bam"), "--reference", str(inputs / "reference.fa"),
-                       "--regions-bed", str(inputs / "regions.bed"), "--output", str(output), "--k", str(k)]
+                       "--regions-bed", str(inputs / "regions.bed"), "--output", str(output), "--N", str(k)]
             run = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
             with (output / "metrics.tsv").open() as handle:
                 rows = list(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(len(rows), 5 - k)
             for row in rows:
-                self.assertEqual(float(row["D_epi"]), 1)
+                self.assertEqual(float(row["epiallele_distance"]), 1)
                 self.assertEqual(float(row["delta_beta"]), 0)
                 self.assertEqual(float(row["delta_entropy"]), 0)
                 self.assertEqual(int(row["control_n_complete_reads"]), 20)
@@ -305,7 +353,7 @@ class TestModBAM(unittest.TestCase):
     def test_cli_failure_does_not_publish_output(self):
         ordinary = self.bam("ordinary.bam", [make_read(no_tags=True)])
         output = self.root / "should_not_exist"
-        run = subprocess.run([sys.executable, "-m", "methyldiver", "analyze", "--control", str(ordinary),
+        run = subprocess.run([sys.executable, "-m", "methyldiver", "compare", "--control", str(ordinary),
                               "--test", str(ordinary), "--reference", str(self.reference),
                               "--region", "chrToy:0-14", "--output", str(output)], capture_output=True, text=True)
         self.assertEqual(run.returncode, 2)

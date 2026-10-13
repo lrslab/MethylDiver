@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "methyldiver"
-version = "1.0.0"
+version = "2.0.0"
 description = "Complete-read methylation level, pattern entropy, and epiallele distance"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,6 +12,7 @@ dependencies = ["pysam>=0.22"]
 
 [project.optional-dependencies]
 arrays = ["numpy>=1.23"]
+genome = ["pyarrow>=14"]
 
 [project.scripts]
 methyldiver = "methyldiver.cli:main"

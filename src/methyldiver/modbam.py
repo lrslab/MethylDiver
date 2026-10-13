@@ -10,6 +10,7 @@ annotations. Implicit/skipped calls are missing, never invented probabilities.
 from array import array
 from bisect import bisect_left
 from collections import Counter
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -21,7 +22,7 @@ import re
 import pysam
 
 from . import __version__
-from .coordinates import cpg_positions, sliding_units
+from .coordinates import MAX_DENSE_COUNT_CELLS, cpg_positions, sliding_units
 from .metrics import compare_counts, metrics
 
 
@@ -285,19 +286,10 @@ def _sample_result(patterns, k):
     return result
 
 
-def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8,
-                   min_mapq=20, min_base_quality=10, min_depth=1,
-                   max_total_bases=100_000, max_reads_per_region=100_000,
-                   max_pattern_evaluations=5_000_000):
-    """Compare indexed modBAMs over explicit nonoverlapping BED0 regions.
-
-    Returns a run manifest and per-unit results. Depth filtering is a reporting
-    flag; all counts and point estimates are retained. No biological inference
-    or whole-genome enumeration is performed implicitly.
-    """
+def _validate_parameters(k, call_threshold, min_mapq, min_base_quality, min_depth,
+                         max_total_bases, max_reads_per_region, max_pattern_evaluations):
+    """Shared parameter validation for region and genome orchestration."""
     from .coordinates import _unit_size
-
-    started_at = datetime.now(timezone.utc).isoformat()
     k = _unit_size(k)
     if isinstance(call_threshold, bool) or not isinstance(call_threshold, (int, float)) or not math.isfinite(call_threshold) or not 0.5 < call_threshold <= 1:
         raise ValueError("Call confidence threshold must be finite and in (0.5, 1].")
@@ -310,6 +302,24 @@ def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8
             raise ValueError(f"{name} must be an integer >= {lower}.")
     if min_mapq > 254 or min_base_quality > 254:
         raise ValueError("Mapping/base quality thresholds must be <= 254; quality 255 is missing.")
+    return k, integers
+
+
+def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8,
+                   min_mapq=20, min_base_quality=10, min_depth=1,
+                   max_total_bases=100_000, max_reads_per_region=100_000,
+                   max_pattern_evaluations=5_000_000):
+    """Compare indexed modBAMs over explicit nonoverlapping BED0 regions.
+
+    Returns a run manifest and per-unit results. Depth filtering is a reporting
+    flag; all counts and point estimates are retained. No biological inference
+    or whole-genome enumeration is performed implicitly.
+    ``test=None`` runs single-sample analysis; prefer analyze_single_modbam for
+    that use case.
+    """
+    started_at = datetime.now(timezone.utc).isoformat()
+    k, integers = _validate_parameters(k, call_threshold, min_mapq, min_base_quality,
+        min_depth, max_total_bases, max_reads_per_region, max_pattern_evaluations)
     regions = list(regions)
     if not regions or any(not isinstance(region, Region) for region in regions):
         raise ValueError("Supply at least one explicit Region or BED interval.")
@@ -321,27 +331,32 @@ def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8
             raise ValueError("Regions overlap; merge overlapping intervals first to avoid counting units twice.")
     if sum(r.end - r.start for r in regions) > max_total_bases:
         raise ValueError("Selected intervals exceed --max-total-bases; choose smaller regions or explicitly raise the limit.")
-    control, test, reference = map(Path, (control, test, reference))
-    for path in (control, test, reference):
+    single = test is None
+    sample_paths = {"sample": Path(control)} if single else {"control": Path(control), "test": Path(test)}
+    reference = Path(reference)
+    for path in (*sample_paths.values(), reference):
         if not path.is_file():
             raise ValueError(f"Input file does not exist: {path}")
     fai = Path(str(reference) + ".fai")
     if not fai.is_file():
         raise ValueError(f"Missing FASTA index: {fai}. Index the reference before running.")
-    indexes = [_index_path(control), _index_path(test)]
+    indexes = {role: _index_path(path) for role, path in sample_paths.items()}
     config = {"k": k, "call_threshold": call_threshold, **integers,
               "ml_decoding": "(byte+0.5)/256", "implicit_and_unknown_calls": "missing",
               "read_filter": "primary_mapped_nonduplicate_nonqcfail", "exclude_mapq_255": True,
               "state_space": "canonical_C_vs_5mC", "context_policy": "reference_CG_no_variant_mask",
               "unit_policy": "consecutive_reference_CpGs_full_dyads_within_each_region",
               "depth_policy": "report_flag_only_preserve_all_estimates"}
-    inputs = {"control": _file_identity(control), "test": _file_identity(test), "reference": _file_identity(reference)}
+    inputs = {role: _file_identity(path) for role, path in sample_paths.items()}
+    inputs["reference"] = _file_identity(reference)
     inputs["reference"]["fai_sha256"] = _digest(fai)
     results, region_reports = [], []
-    with pysam.FastaFile(str(reference)) as fasta, \
-            pysam.AlignmentFile(str(control), "rb", index_filename=str(indexes[0])) as control_bam, \
-            pysam.AlignmentFile(str(test), "rb", index_filename=str(indexes[1])) as test_bam:
-        for label, bam, index in zip(("control", "test"), (control_bam, test_bam), indexes):
+    with ExitStack() as stack:
+        fasta = stack.enter_context(pysam.FastaFile(str(reference)))
+        bams = {role: stack.enter_context(pysam.AlignmentFile(str(path), "rb", index_filename=str(indexes[role])))
+                for role, path in sample_paths.items()}
+        for label, bam in bams.items():
+            index = indexes[label]
             if not bam.is_bam or not bam.has_index():
                 raise ValueError(f"{label}: input must be an indexed BAM (CRAM is not yet supported).")
             inputs[label]["index_path"] = str(index.resolve())
@@ -361,31 +376,36 @@ def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8
             sequence = fasta.fetch(region.chrom, region.start, region.end).upper()
             positions = cpg_positions(sequence, region.start)
             units = list(sliding_units(positions, k))
-            cp, cq = _extract(control_bam, region, positions, units, config)
-            tp, tq = _extract(test_bam, region, positions, units, config)
+            if len(bams) * (len(results) + len(units)) * (2 ** k) > MAX_DENSE_COUNT_CELLS:
+                raise ValueError("Dense-pattern count limit exceeded for this N; use smaller selected regions or --genome.")
+            extracted = {role: _extract(bam, region, positions, units, config) for role, bam in bams.items()}
             eligible = 0
-            for unit, a, b in zip(units, cp, tp):
-                am, bm = _sample_result(a, k), _sample_result(b, k)
-                passes = min(am["n_complete_reads"], bm["n_complete_reads"]) >= min_depth
+            for index, unit in enumerate(units):
+                samples = {role: _sample_result(patterns[index], k) for role, (patterns, qc) in extracted.items()}
+                passes = all(values["n_complete_reads"] >= min_depth for values in samples.values())
                 eligible += passes
-                results.append({"region_id": region.region_id, "chrom": region.chrom,
-                                "start": unit[0], "end": unit[-1] + 2, "cpg_anchors": list(unit),
-                                "unit_size": k, "control": am, "test": bm,
-                                "comparison": compare_counts(am["counts"], bm["counts"]),
-                                "passes_min_depth": passes})
+                result = {"region_id": region.region_id, "chrom": region.chrom,
+                          "start": unit[0], "end": unit[-1] + 2, "cpg_anchors": list(unit),
+                          "unit_size": k, **samples, "passes_min_depth": passes}
+                if not single:
+                    result["comparison"] = compare_counts(samples["control"]["counts"], samples["test"]["counts"])
+                results.append(result)
             region_reports.append({**asdict(region), "region_id": region.region_id,
                                    "sequence_sha256": hashlib.sha256(sequence.encode()).hexdigest(),
                                    "n_reference_cpgs": len(positions), "n_units": len(units),
-                                   "n_units_passing_min_depth": eligible, "control_qc": cq, "test_qc": tq})
+                                   "n_units_passing_min_depth": eligible,
+                                   **{f"{role}_qc": qc for role, (patterns, qc) in extracted.items()}})
     # Abort if a source changed while it was being read; this is not a full BAM hash.
-    for label, path in (("control", control), ("test", test), ("reference", reference)):
+    for label, path in {**sample_paths, "reference": reference}.items():
         current = _file_identity(path)
         if any(current[key] != inputs[label][key] for key in ("bytes", "mtime_ns")):
             raise ValueError(f"{label} changed during analysis; output was not published.")
-    manifest = {"schema_version": "1.0", "package_version": __version__, "status": "complete",
+    manifest = {"schema_version": "2.0", "package_version": __version__, "status": "complete",
                 "started_at": started_at, "completed_at": datetime.now(timezone.utc).isoformat(),
                 "pysam_version": pysam.__version__, "htslib_version": pysam.__samtools_version__,
-                "method": "complete_read_plugin_explicit_modbam_calls", "direction": "test_minus_control",
+                "method": "complete_read_plugin_explicit_modbam_calls",
+                "analysis_type": "single" if single else "paired",
+                **({} if single else {"direction": "test_minus_control"}),
                 "reference_validation": "selected_contig_names_and_lengths_only; sequence_identity_not_proven",
                 "coordinate_system": "BED0_half_open; CpG_anchors_forward_reference_C",
                 "config": config, "inputs": inputs, "regions": region_reports,
@@ -393,3 +413,8 @@ def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8
                 "source_sha256": {name: _digest(Path(__file__).with_name(name)) for name in
                                   ("modbam.py", "metrics.py", "coordinates.py", "output.py", "cli.py", "__init__.py")}}
     return {"manifest": manifest, "units": results}
+
+
+def analyze_single_modbam(sample, reference, regions, **kwargs):
+    """Calculate beta and entropy from one indexed modBAM over explicit regions."""
+    return analyze_modbam(sample, None, reference, regions, **kwargs)

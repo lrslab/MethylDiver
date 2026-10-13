@@ -7,20 +7,21 @@ the caller must match ordered units before calling compare_arrays.
 
 import numpy as np
 
-from .metrics import checked_counts
+from .metrics import _count_unit_size, checked_counts
 
 
 def _checked_matrix(counts):
     raw = np.asarray(counts)
-    if raw.ndim != 2 or raw.shape[1] not in (8, 16):
-        raise ValueError("Expected a two-dimensional count matrix with 8 or 16 columns.")
+    if raw.ndim != 2:
+        raise ValueError("Expected a two-dimensional count matrix with 2^N columns.")
+    k = _count_unit_size(raw.shape[1])
     # Check original values before coercion so bools and strings cannot become counts.
     rows = [checked_counts(row)[0] for row in np.asarray(counts, dtype=object)]
     totals = [sum(row) for row in rows]
     if any(n > np.iinfo(np.int64).max for n in totals):
         raise ValueError("Batch complete-read totals must fit int64; use the scalar API for larger counts.")
     values = np.asarray(rows, dtype=np.float64).reshape(raw.shape)
-    return values, np.asarray(totals, dtype=np.int64), raw.shape[1].bit_length() - 1
+    return values, np.asarray(totals, dtype=np.int64), k
 
 
 def _calculate(values, totals, k):
@@ -43,7 +44,7 @@ def array_metrics(counts):
 
 
 def compare_arrays(control, test):
-    """Return (delta_beta, delta_entropy, D_epi), one value per matched row."""
+    """Return (delta_beta, delta_entropy, epiallele_distance), one value per matched row."""
     a, na, k = _checked_matrix(control)
     b, nb, j = _checked_matrix(test)
     if a.shape != b.shape or k != j:

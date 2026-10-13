@@ -14,8 +14,8 @@ else:
 class TestArrays(unittest.TestCase):
     def test_randomized_scalar_equivalence(self):
         rng = np.random.default_rng(20261012)
-        for k in (3, 4):
-            a = rng.integers(0, 1000, size=(250, 2 ** k), dtype=np.int64)
+        for k in (1, 2, 3, 4, 5, 10):
+            a = rng.integers(0, 1000, size=(25 if k == 10 else 250, 2 ** k), dtype=np.int64)
             b = rng.integers(0, 1000, size=a.shape, dtype=np.int64)
             a[0] = 0
             b[1] = 0
@@ -32,14 +32,14 @@ class TestArrays(unittest.TestCase):
                     else:
                         self.assertAlmostEqual(actual, expected[key], delta=1e-12)
                 expected = compare_counts(ar, br)
-                for actual, key in ((db[i], "delta_beta"), (dh[i], "delta_entropy"), (distance[i], "D_epi")):
+                for actual, key in ((db[i], "delta_beta"), (dh[i], "delta_entropy"), (distance[i], "epiallele_distance")):
                     if expected[key] is None:
                         self.assertTrue(np.isnan(actual))
                     else:
                         self.assertAlmostEqual(actual, expected[key], delta=1e-12)
 
     def test_zero_rows_and_empty_samples(self):
-        for k in (3, 4):
+        for k in (1, 2, 3, 4, 5, 10):
             empty = np.empty((0, 2 ** k), dtype=int)
             for result in (*array_metrics(empty), *compare_arrays(empty, empty)):
                 self.assertEqual(result.shape, (0,))
