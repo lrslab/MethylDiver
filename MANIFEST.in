@@ -2,5 +2,7 @@ include NOTICE
 include CHANGELOG.md
 recursive-include examples *.tsv *.py *.R
 recursive-include tests *.py *.json
+recursive-include docs *.md *.rst *.py *.txt
+prune docs/_build
 prune provenance
 prune Readme

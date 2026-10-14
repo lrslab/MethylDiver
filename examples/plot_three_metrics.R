@@ -26,6 +26,16 @@ control <- manifest$sample_labels$control
 test <- manifest$sample_labels$test
 if (is.null(control)) control <- "control"
 if (is.null(test)) test <- "test"
+modification <- manifest$config$modification
+if (is.null(modification)) modification <- "5mC"
+stopifnot(modification %in% c("5mC", "5hmC"))
+mod_text <- function(text) {
+  if (modification == "5hmC") {
+    text <- gsub("methylation", "hydroxymethylation", text, fixed = TRUE)
+    text <- gsub("Methylation", "Hydroxymethylation", text, fixed = TRUE)
+  }
+  text
+}
 N_cpg <- manifest$config$k
 names_in <- c(paste0(control, "_beta"), paste0(test, "_beta"), "delta_beta",
               paste0(control, "_entropy"), paste0(test, "_entropy"), "delta_entropy", "epiallele_distance")
@@ -49,8 +59,8 @@ stopifnot(all(unique(dt$chrom) %in% contigs$chrom))
 stopifnot(all(dt$end <= contigs$length[match(dt$chrom, contigs$chrom)]))
 chrom_order <- contigs$chrom
 subject <- basename(dirname(input))
-footer <- sprintf("%s | %s to %s | N = %s | %s CpG units\nComplete metrics only; no minimum-depth filter applied. Exploratory analysis of one sample pair.",
-                  subject, control, test, N_cpg, comma(n_units))
+footer <- sprintf("%s | %s to %s | %s at CpGs | N = %s | %s CpG units\nComplete metrics only; no minimum-depth filter applied. Exploratory analysis of one sample pair.",
+                  subject, control, test, modification, N_cpg, comma(n_units))
 colors <- setNames(c("#24788C", "#CF683E"), c(control, test))
 theme_set(theme_bw(base_size = 11, base_family = "DejaVu Sans") +
   theme(panel.grid.minor = element_blank(), panel.grid.major = element_line(color = "#E9EDF0", linewidth = 0.25),
@@ -66,6 +76,7 @@ descriptions <- character()
 save_panel <- function(p, name, title, subtitle, width = 7.8, height = 6.0) {
   path <- file.path(out, paste0(name, ".pdf"))
   if (file.exists(path) && !overwrite) stop("Output exists; use --overwrite explicitly: ", path)
+  title <- paste(strwrap(title, width = if (width <= 8) 42 else 70), collapse = "\n")
   p <- p + labs(title = title, subtitle = subtitle, caption = footer)
   ggsave(path, p, device = grDevices::cairo_pdf, width = width, height = height,
          units = "in", bg = "white", family = "DejaVu Sans")
@@ -92,13 +103,13 @@ hist_panel <- function(columns, labels, bounds, xlabel, name, title) {
     scale_y_continuous(expand = expansion(mult = c(0, 0.06))) + labs(x = xlabel, y = "CpG units per bin (%)")
   save_panel(p, name, title, sprintf("All units; 50 equal-width bins (width %.2f)", diff(bounds) / 50))
 }
-hist_panel(c("beta_control", "beta_test"), c(control, test), c(0, 1), "Methylation level (β)",
-           "01_methylation_distributions", "Methylation-level distributions")
+hist_panel(c("beta_control", "beta_test"), c(control, test), c(0, 1), mod_text("Methylation level (β)"),
+           "01_methylation_distributions", mod_text("Methylation-level distributions"))
 hist_panel(c("entropy_control", "entropy_test"), c(control, test), c(0, 1), "Normalized pattern entropy (H)",
            "02_entropy_distributions", "Pattern-entropy distributions")
 hist_panel("distance", "", c(0, 1), "Epiallele distance", "03_epiallele_distance_distribution", "Epiallele-distance distribution")
 hist_panel("delta_beta", "", c(-1, 1), sprintf("Δβ (%s minus %s)", test, control),
-           "04_delta_methylation_distribution", "Changes in methylation level")
+           "04_delta_methylation_distribution", mod_text("Changes in methylation level"))
 hist_panel("delta_entropy", "", c(-1, 1), sprintf("ΔH (%s minus %s)", test, control),
            "05_delta_entropy_distribution", "Changes in pattern entropy")
 
@@ -124,10 +135,10 @@ density_panel <- function(grid, bounds, xlabel, ylabel, diagonal = FALSE) {
 }
 for (metric in c("beta", "entropy")) {
   x <- dt[[paste0(metric, "_control")]]; y <- dt[[paste0(metric, "_test")]]
-  label <- if (metric == "beta") "Methylation level (β)" else "Pattern entropy (H)"
+  label <- if (metric == "beta") mod_text("Methylation level (β)") else "Pattern entropy (H)"
   id <- if (metric == "beta") "06_paired_methylation_density" else "07_paired_entropy_density"
   p <- density_panel(bin2d(x, y), c(0, 1), paste(control, label), paste(test, label), TRUE)
-  save_panel(p, id, paste(control, "versus", test, if (metric == "beta") "methylation" else "entropy"),
+  save_panel(p, id, paste(control, "versus", test, if (metric == "beta") mod_text("methylation") else "entropy"),
              sprintf("All units; 80 × 80 bins; logarithmic counts; Pearson r = %s",
                      if (length(x) > 1L && sd(x) > 0 && sd(y) > 0) sprintf("%.3f", cor(x, y)) else "undefined (constant values)"))
 }
@@ -135,7 +146,7 @@ joint <- bin2d(dt$delta_beta, dt$delta_entropy, c(-1, 1))
 zero_lines <- list(geom_hline(yintercept = 0, linetype = "dashed", color = "#37454E", linewidth = 0.3),
                    geom_vline(xintercept = 0, linetype = "dashed", color = "#37454E", linewidth = 0.3))
 p <- density_panel(joint, c(-1, 1), "Δβ (test minus control)", "ΔH (test minus control)") + zero_lines
-save_panel(p, "08_joint_changes_density", "Methylation and entropy changes", "All units; 80 × 80 bins; colour shows logarithmic unit counts")
+save_panel(p, "08_joint_changes_density", mod_text("Methylation and entropy changes"), "All units; 80 × 80 bins; colour shows logarithmic unit counts")
 mean_grid <- joint[count >= 10]
 p <- ggplot(mean_grid, aes(x, y, fill = mean_distance)) + geom_tile(width = 2 / 80, height = 2 / 80) +
   scale_fill_viridis_c(limits = c(0, 1), option = "D", name = "Mean epiallele\ndistance") +
@@ -145,10 +156,10 @@ p <- ggplot(mean_grid, aes(x, y, fill = mean_distance)) + geom_tile(width = 2 / 
 save_panel(p, "09_joint_changes_mean_distance", "Epiallele distance across the change map",
            sprintf("80 × 80 bins; means shown for bins with ≥10 units (%.2f%% of units)", 100 * sum(mean_grid$count) / n_units))
 for (metric in c("beta", "entropy")) {
-  xlabel <- if (metric == "beta") "Absolute methylation change (|Δβ|)" else "Absolute entropy change (|ΔH|)"
+  xlabel <- if (metric == "beta") mod_text("Absolute methylation change (|Δβ|)") else "Absolute entropy change (|ΔH|)"
   id <- if (metric == "beta") "10_distance_vs_methylation_change" else "11_distance_vs_entropy_change"
   p <- density_panel(bin2d(abs(dt[[paste0("delta_", metric)]]), dt$distance), c(0, 1), xlabel, "Epiallele distance")
-  save_panel(p, id, paste("Epiallele distance versus", if (metric == "beta") "methylation change" else "entropy change"),
+  save_panel(p, id, paste("Epiallele distance versus", if (metric == "beta") mod_text("methylation change") else "entropy change"),
              "All units; 80 × 80 bins; colour shows logarithmic unit counts")
 }
 
@@ -163,9 +174,9 @@ for (metric in c("beta", "entropy")) {
   p <- ggplot(long, aes(mean_value, chromosome, color = sample)) +
     geom_point(position = position_dodge(width = 0.4), size = 2) +
     scale_color_manual(values = colors, name = NULL) + scale_x_continuous(limits = c(0, 1)) +
-    labs(x = if (metric == "beta") "Mean methylation level (β)" else "Mean normalized entropy (H)", y = "Reference contig")
+    labs(x = if (metric == "beta") mod_text("Mean methylation level (β)") else "Mean normalized entropy (H)", y = "Reference contig")
   save_panel(p, if (metric == "beta") "12_chromosome_methylation" else "13_chromosome_entropy",
-             if (metric == "beta") "Methylation by chromosome" else "Pattern entropy by chromosome",
+             if (metric == "beta") mod_text("Methylation by chromosome") else "Pattern entropy by chromosome",
              "Arithmetic mean across plotted CpG units; unit-weighted, not read-weighted", width = 7.8, height = 8.4)
 }
 p <- ggplot(chrom, aes(median_distance, chromosome)) +
@@ -193,7 +204,7 @@ for (metric in c("delta_beta", "delta_entropy", "distance", "units")) {
   values <- copy(windows)
   if (metric != "units") values[units < 100, (metric) := NA_real_]
   spec <- switch(metric,
-    delta_beta = c("16_genome_methylation_change", "Methylation change across the genome", "Mean Δβ (test minus control)"),
+    delta_beta = c("16_genome_methylation_change", mod_text("Methylation change across the genome"), "Mean Δβ (test minus control)"),
     delta_entropy = c("17_genome_entropy_change", "Entropy change across the genome", "Mean ΔH (test minus control)"),
     distance = c("18_genome_epiallele_distance", "Epiallele distance across the genome", "Mean epiallele distance"),
     units = c("19_genome_unit_counts", "Plotted-unit density across the genome", "CpG units per 1-Mb window"))
@@ -214,6 +225,7 @@ for (metric in c("delta_beta", "delta_entropy", "distance", "units")) {
 notes <- c("MethylDiver exploratory plots: one panel per PDF", paste("Input:", input),
            paste("Input MD5:", unname(tools::md5sum(input))), paste("Rows:", comma(n_units)),
            paste("Samples:", control, "and", test), paste("CpGs per unit:", N_cpg),
+           paste("Modification:", modification, "at CpGs; 0 means not the selected modification, not necessarily unmodified C."),
            "All TSV rows are used. No random subsampling is performed.",
            "The TSV excludes missing metrics but has no read-depth columns; no minimum-depth filter can be applied from it alone.",
            paste("The run summary reports", manifest$n_units_passing_min_depth, "units passing its depth threshold of", manifest$config$min_depth,

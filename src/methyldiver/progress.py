@@ -106,6 +106,8 @@ class LiveProgress:
 
 def print_analysis_summary(output, manifest, files, elapsed):
     print(f"methyldiver: analysis complete | elapsed {duration(elapsed)}")
+    if manifest.get("config", {}).get("modification"):
+        print(f"  Modification: {manifest['config']['modification']} | context: CpG")
     print(f"  Units analyzed: {manifest['n_units']:,} | passing depth threshold: {manifest['n_units_passing_min_depth']:,}")
     outputs = manifest.get("outputs", {})
     table = outputs.get("two_metrics.tsv", outputs.get("three_metrics.tsv"))

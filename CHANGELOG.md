@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.1.0 - 2026-10-14
+
+- Merge the full user documentation into `docs/`; keep the main README concise.
+
+- Add `--modification 5mC` (default), `5hmC`, or `5mC,5hmC` to both `compare`
+  and `single`. All targets use reference CpG units; 4mC, 6mA, and non-CpG
+  contexts are not analysis targets in this release.
+- Decode mixed 5mC/5hmC tags in combined or separate groups, including numeric
+  aliases and both supported strand orientations. Reject duplicate aliases
+  and incompatible overlapping modification probabilities.
+- Each target uses its own absolute probability: `1` is the selected
+  modification, `0` is not that modification, and `.` is missing/uncertain.
+  A `0` can represent another modification, not only unmodified cytosine.
+  Missing selected calls are never inferred from other modification calls.
+  Existing binary C/5mC results are unchanged.
+- Selecting both targets runs separate analyses sequentially into `5mC/`
+  and `5hmC/`, with a top-level summary. Publish only after both succeed.
+  Selecting one target preserves the existing flat output layout.
+- Record target, context, pattern-state meanings, and target-presence QC in
+  run summaries. Check absent targets over the whole requested scope so a
+  single chunk without the selected profile does not abort a valid genome run.
+- Extraction Python APIs accept `modification="5hmC"` (one target per call).
+  Rename modification-call QC counters to selected/not-selected terminology.
+- Label 5hmC plots as hydroxymethylation and include the target in PDF captions.
+  Detailed guidance is maintained alongside the software in `docs/`.
+
+Metric formulas, TSV columns, N defaults, complete-pattern requirements, and
+reporting-only `--min-depth` behavior are unchanged.
+
 ## 2.0.0 - 2026-10-13
 
 This release adds genome-wide and single-sample analysis, result export, and a

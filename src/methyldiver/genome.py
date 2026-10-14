@@ -5,6 +5,7 @@ every reference-CpG unit, including units spanning sequence-scan boundaries.
 """
 
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from collections import Counter
 from contextlib import ExitStack
 import csv
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ import pysam
 from . import __version__
 from .coordinates import MAX_DENSE_COUNT_CELLS
 from .modbam import (Region, _digest, _file_identity, _index_path,
-                     _validate_parameters, analyze_modbam)
+                     _validate_parameters, analyze_modbam, modification_config, require_modification)
 from .output import (has_complete_metrics, sample_labels, single_sample_labels,
                      metric_columns, metric_filename)
 from .reader import read_results
@@ -129,6 +130,7 @@ def _write_chunk(result, stage, name, chunk_manifests, keep_patterns):
         path.write_bytes(data)
         manifest_hash = _digest(path)
     return {"id": name, "n_units": len(rows), "n_units_passing_min_depth": manifest["n_units_passing_min_depth"],
+            "modification_qc": manifest["modification_qc"],
             "n_units_with_metrics": manifest["n_units_with_metrics"],
             "manifest": relative, "manifest_sha256": manifest_hash, "outputs": outputs}
 
@@ -136,7 +138,8 @@ def _write_chunk(result, stage, name, chunk_manifests, keep_patterns):
 def _run_chunk(payload):
     job, inputs, settings, stage, chunk_manifests, keep_patterns = payload
     region = Region(job["chrom"], job["start"], job["end"], job["id"])
-    result = analyze_modbam(*inputs, [region], max_total_bases=region.end - region.start, **settings)
+    result = analyze_modbam(*inputs, [region], max_total_bases=region.end - region.start,
+                           _allow_absent_modification=True, **settings)
     units = result["units"]
     if (len(units) != job["n_units"] or units[0]["start"] != job["first_anchor"]
             or units[-1]["start"] != job["last_anchor"]):
@@ -147,7 +150,7 @@ def _run_chunk(payload):
 def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=10_000,
                    chunk_manifests=False, keep_patterns=False,
                    control_label="control", test_label="test", sample_label="sample",
-                   k=3, call_threshold=0.8, min_mapq=20, min_base_quality=10, min_depth=1,
+                   k=3, modification="5mC", call_threshold=0.8, min_mapq=20, min_base_quality=10, min_depth=1,
                    max_reads_per_region=100_000, max_pattern_evaluations=5_000_000,
                    progress=None, status=None):
     """Write every CpG unit on the BAM reference contigs to a new directory.
@@ -165,6 +168,7 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
     that use case.
     """
     single = test is None
+    modification_settings = modification_config(modification)
     roles = ("sample",) if single else ("control", "test")
     labels = single_sample_labels(sample_label) if single else sample_labels(control_label, test_label)
     summary_columns, summary_name = metric_columns(single), metric_filename(single)
@@ -213,7 +217,7 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
         jobs, contigs = _plan(fasta, list(ar.items()), k, chunk_units)
         unused = [chrom for chrom in fasta.references if chrom not in ar]
         headers = {role: bam.header.to_dict() for role, bam in bams.items()}
-    settings = {"k": k, "call_threshold": call_threshold, "min_mapq": min_mapq,
+    settings = {"k": k, "modification": modification, "call_threshold": call_threshold, "min_mapq": min_mapq,
                 "min_base_quality": min_base_quality, "min_depth": min_depth,
                 "max_reads_per_region": max_reads_per_region, "max_pattern_evaluations": max_pattern_evaluations}
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -274,6 +278,9 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
                 pq.write_table(pa.Table.from_pylist([], schema=schema), stage / folder / "empty.parquet", compression="zstd")
         if completed_units != sum(c["n_units"] for c in contigs):
             raise ValueError("Genome unit count differs from the reference plan.")
+        modification_qc = {role: dict(sum((Counter(s["modification_qc"][role]) for s in summaries), Counter()))
+                           for role in roles}
+        require_modification(modification_qc, modification)
         for path, before in zip((*paths, *indexes), identities):
             after = _file_identity(path)
             if any(before[key] != after[key] for key in ("bytes", "mtime_ns")):
@@ -297,11 +304,13 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
         if not keep_patterns:
             for folder in ("complete_patterns", "incomplete_patterns"):
                 shutil.rmtree(stage / folder)
-        manifest = {"schema_version": "2.0", "package_version": __version__, "status": "complete",
+        manifest = {"schema_version": "2.1", "package_version": __version__, "status": "complete",
             "mode": "genome", "started_at": started, "completed_at": datetime.now(timezone.utc).isoformat(),
             "scope": "every consecutive reference-CpG unit on all BAM reference contigs",
             "coordinate_system": "BED0_half_open; CpG_anchors_forward_reference_C",
-            "analysis_type": "single" if single else "paired", "config": settings, "threads": threads,
+            "analysis_type": "single" if single else "paired",
+            "config": {**settings, **modification_settings}, "threads": threads,
+            "modification_qc": modification_qc,
             "sample_labels": labels,
             **({} if single else {"direction": "test_minus_control", "labelled_direction": f"{test_label} minus {control_label}"}),
             "chunk_units": chunk_units, "chunk_manifests": chunk_manifests,

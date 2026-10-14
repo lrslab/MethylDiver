@@ -174,7 +174,7 @@ class TestModBAM(unittest.TestCase):
 
     def test_unsupported_and_malformed_tags(self):
         reads = []
-        for mm, ml in (("C+mh?,0;", [200, 40]), ("C+h?;", []),
+        for mm, ml in (("C+mh?,0;", [200, 200]), ("C+f?;", []),
                        ("C+m?,0;G-m?,0;", [255, 255]), ("C-m?,0;", [255]),
                        ("N+m?,0;", [255]), ("C+m?,0;C+m?,0;", [255, 255]),
                        ("C+m?,0;", [255, 0]), ("C+m?,0", [255]),

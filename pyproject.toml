@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "methyldiver"
-version = "2.0.0"
+version = "2.1.0"
 description = "Complete-read methylation level, pattern entropy, and epiallele distance"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +19,7 @@ methyldiver = "methyldiver.cli:main"
 
 [project.urls]
 Repository = "https://github.com/lxd98/MethylDiver"
-Documentation = "https://github.com/lxd98/MethylDiver_documentation"
+Documentation = "https://github.com/lxd98/MethylDiver/tree/main/docs"
 
 [tool.setuptools.packages.find]
 where = ["src"]

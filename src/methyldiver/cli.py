@@ -2,9 +2,12 @@
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import sys
+import shutil
+import tempfile
 import time
 
 from . import __version__
@@ -53,6 +56,56 @@ def _boolean_argument(value: str) -> bool:
     raise argparse.ArgumentTypeError("expected True or False (T/F also accepted)")
 
 
+def _modification_argument(value):
+    names = value.split(",")
+    if any(name not in ("5mC", "5hmC") for name in names) or len(names) != len(set(names)):
+        raise argparse.ArgumentTypeError("choose 5mC, 5hmC, or 5mC,5hmC without duplicates; CpG context only")
+    return value
+
+
+def _run_selected_modifications(args):
+    from .progress import print_analysis_summary, duration
+    started = time.monotonic()
+    modifications = args.modification.split(",")
+    if len(modifications) == 1:
+        manifest, files = _run_analysis(args)
+        print_analysis_summary(args.output, manifest, files, time.monotonic() - started)
+        return 0
+    if os.path.lexists(args.output):
+        raise FileExistsError(f"Output already exists: {args.output}. Choose a new run directory.")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".{args.output.name}.", suffix=".tmp", dir=args.output.parent))
+    completed = []
+    try:
+        for modification in modifications:
+            child = argparse.Namespace(**vars(args))
+            child.modification, child.output = modification, stage / modification
+            print(f"methyldiver: processing {modification} at CpGs ({len(completed) + 1}/{len(modifications)})", file=sys.stderr)
+            child_started = time.monotonic()
+            manifest, files = _run_analysis(child)
+            if completed and manifest["inputs"] != completed[0][1]["inputs"]:
+                raise ValueError("Input identities changed between modification analyses; no results were published.")
+            completed.append((modification, manifest, files, time.monotonic() - child_started))
+        summary = {"schema_version": "2.1", "package_version": __version__, "status": "complete",
+                   "mode": "genome" if args.genome else "regions",
+                   "analysis_type": "single" if args.command == "single" else "paired",
+                   "modifications": modifications, "modification_context": "CpG",
+                   "results": {name: {"directory": name, "analysis_summary": f"{name}/analysis_summary.json"}
+                               for name in modifications}}
+        (stage / "analysis_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        if os.path.lexists(args.output):
+            raise FileExistsError(f"Output appeared during analysis: {args.output}; it was not overwritten.")
+        os.rename(stage, args.output)
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+    for name, manifest, files, elapsed in completed:
+        print_analysis_summary(args.output / name, manifest, files, elapsed)
+    print(f"methyldiver: all modifications complete | elapsed {duration(time.monotonic() - started)}")
+    print(f"  Output: {args.output.resolve()}")
+    return 0
+
+
 def _analysis_arguments(command, *, single=False):
     inputs = command.add_argument_group("Input files (required)")
     if single:
@@ -69,6 +122,8 @@ def _analysis_arguments(command, *, single=False):
     selection.add_argument("--regions-bed", type=Path, metavar="FILE", help="Nonoverlapping BED3/BED4 intervals; 0-based, end-exclusive [unset].")
 
     analysis = command.add_argument_group("Analysis options")
+    analysis.add_argument("--modification", default="5mC", type=_modification_argument, metavar="STR",
+                          help="CpG target: 5mC, 5hmC, or 5mC,5hmC for separate results [5mC].")
     analysis.add_argument("--N", dest="k", metavar="INT", default=3, type=int, help="Consecutive CpGs per unit, 1–10 [%(default)s].")
     analysis.add_argument("--call-threshold", type=float, default=0.8, metavar="FLOAT", help="Binary-call confidence, greater than 0.5 and at most 1 [%(default)s].")
     analysis.add_argument("--min-mapq", type=int, default=20, metavar="INT", help="Minimum read mapping quality, 0–254; MAPQ 255 is excluded [%(default)s].")
@@ -113,6 +168,65 @@ def _reader_arguments(reader):
     labels.add_argument("--control-label", metavar="STR", help="Paired control label [saved label, or control].")
     labels.add_argument("--test-label", metavar="STR", help="Paired test label [saved label, or test].")
     labels.add_argument("--sample-label", metavar="STR", help="Single-sample label [saved label, or sample].")
+
+
+def _run_analysis(args):
+    single = args.command == "single"
+    control, test = (args.input, None) if single else (args.control, args.test)
+    control_label = "control" if single else args.control_label
+    test_label = "test" if single else args.test_label
+    sample_label = args.sample_label if single else "sample"
+    from .progress import LiveProgress
+    from .output import sample_labels, single_sample_labels, metric_filename
+    if single:
+        single_sample_labels(sample_label)
+    else:
+        sample_labels(control_label, test_label)
+    summary_name = metric_filename(single)
+    if os.path.lexists(args.output):
+        raise FileExistsError(f"Output already exists: {args.output}. Choose a new run directory.")
+    if args.genome:
+        if args.max_total_bases is not None:
+            raise ValueError("--max-total-bases applies only to selected regions, not --genome.")
+        from .genome import analyze_genome
+        with LiveProgress() as reporter:
+            manifest = analyze_genome(control, test, args.reference, args.output,
+                threads=args.threads, chunk_units=args.chunk_units if args.chunk_units is not None else 10_000,
+                chunk_manifests=args.chunk_manifests if args.chunk_manifests is not None else False,
+                keep_patterns=args.keep_patterns if args.keep_patterns is not None else False,
+                control_label=control_label, test_label=test_label, sample_label=sample_label,
+                k=args.k, modification=args.modification, call_threshold=args.call_threshold, min_mapq=args.min_mapq,
+                min_base_quality=args.min_base_quality, min_depth=args.min_depth,
+                max_reads_per_region=args.max_reads_per_region,
+                max_pattern_evaluations=args.max_pattern_evaluations,
+                progress=reporter.analysis, status=reporter.stage)
+        files = ["complete_patterns/", "incomplete_patterns/"] if manifest["keep_patterns"] else []
+        if manifest["chunk_manifests"]:
+            files.append("chunk_manifests/")
+        files += [summary_name, "chunks.tsv", "analysis_summary.json"]
+        return manifest, files
+    if args.threads != 1 or args.chunk_units is not None:
+        raise ValueError("--threads values other than 1 and --chunk-units require --genome.")
+    if args.chunk_manifests is not None:
+        raise ValueError("--chunk-manifests requires --genome.")
+    if args.keep_patterns is not None:
+        raise ValueError("--keep-patterns requires --genome.")
+    from .modbam import analyze_modbam, parse_region, read_regions_bed
+    from .output import write_analysis
+
+    regions = read_regions_bed(args.regions_bed) if args.regions_bed else [parse_region(value) for value in args.region]
+    result = analyze_modbam(
+        control, test, args.reference, regions, k=args.k, modification=args.modification,
+        call_threshold=args.call_threshold, min_mapq=args.min_mapq,
+        min_base_quality=args.min_base_quality, min_depth=args.min_depth,
+        max_total_bases=args.max_total_bases if args.max_total_bases is not None else 100_000,
+        max_reads_per_region=args.max_reads_per_region,
+        max_pattern_evaluations=args.max_pattern_evaluations,
+    )
+    if args.regions_bed:
+        result["manifest"]["regions_bed_sha256"] = hashlib.sha256(args.regions_bed.read_bytes()).hexdigest()
+    manifest = write_analysis(result, args.output, control_label=control_label, test_label=test_label, sample_label=sample_label)
+    return manifest, [summary_name, "metrics.tsv", "patterns.tsv", "analysis_summary.json"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -165,67 +279,7 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             return 0
         if args.command in ("compare", "single"):
-            single = args.command == "single"
-            control, test = (args.input, None) if single else (args.control, args.test)
-            control_label = "control" if single else args.control_label
-            test_label = "test" if single else args.test_label
-            sample_label = args.sample_label if single else "sample"
-            analysis_started = time.monotonic()
-            from .progress import LiveProgress, print_analysis_summary
-            from .output import sample_labels, single_sample_labels, metric_filename
-            if single:
-                single_sample_labels(sample_label)
-            else:
-                sample_labels(control_label, test_label)
-            summary_name = metric_filename(single)
-            if os.path.lexists(args.output):
-                raise FileExistsError(f"Output already exists: {args.output}. Choose a new run directory.")
-            if args.genome:
-                if args.max_total_bases is not None:
-                    raise ValueError("--max-total-bases applies only to selected regions, not --genome.")
-                from .genome import analyze_genome
-                with LiveProgress() as reporter:
-                    manifest = analyze_genome(control, test, args.reference, args.output,
-                        threads=args.threads, chunk_units=args.chunk_units if args.chunk_units is not None else 10_000,
-                        chunk_manifests=args.chunk_manifests if args.chunk_manifests is not None else False,
-                        keep_patterns=args.keep_patterns if args.keep_patterns is not None else False,
-                        control_label=control_label, test_label=test_label, sample_label=sample_label,
-                        k=args.k, call_threshold=args.call_threshold, min_mapq=args.min_mapq,
-                        min_base_quality=args.min_base_quality, min_depth=args.min_depth,
-                        max_reads_per_region=args.max_reads_per_region,
-                        max_pattern_evaluations=args.max_pattern_evaluations,
-                        progress=reporter.analysis, status=reporter.stage)
-                files = ["complete_patterns/", "incomplete_patterns/"] if manifest["keep_patterns"] else []
-                if manifest["chunk_manifests"]:
-                    files.append("chunk_manifests/")
-                files += [summary_name, "chunks.tsv", "analysis_summary.json"]
-                print_analysis_summary(args.output, manifest, files, time.monotonic() - analysis_started)
-                return 0
-            if args.threads != 1 or args.chunk_units is not None:
-                raise ValueError("--threads values other than 1 and --chunk-units require --genome.")
-            if args.chunk_manifests is not None:
-                raise ValueError("--chunk-manifests requires --genome.")
-            if args.keep_patterns is not None:
-                raise ValueError("--keep-patterns requires --genome.")
-            from .modbam import analyze_modbam, parse_region, read_regions_bed
-            from .output import write_analysis
-
-            regions = read_regions_bed(args.regions_bed) if args.regions_bed else [parse_region(value) for value in args.region]
-            result = analyze_modbam(
-                control, test, args.reference, regions, k=args.k,
-                call_threshold=args.call_threshold, min_mapq=args.min_mapq,
-                min_base_quality=args.min_base_quality, min_depth=args.min_depth,
-                max_total_bases=args.max_total_bases if args.max_total_bases is not None else 100_000,
-                max_reads_per_region=args.max_reads_per_region,
-                max_pattern_evaluations=args.max_pattern_evaluations,
-            )
-            if args.regions_bed:
-                result["manifest"]["regions_bed_sha256"] = hashlib.sha256(args.regions_bed.read_bytes()).hexdigest()
-            manifest = write_analysis(result, args.output, control_label=control_label, test_label=test_label, sample_label=sample_label)
-            print_analysis_summary(args.output, manifest,
-                                   [summary_name, "metrics.tsv", "patterns.tsv", "analysis_summary.json"],
-                                   time.monotonic() - analysis_started)
-            return 0
+            return _run_selected_modifications(args)
     except (OSError, ValueError, ImportError) as exc:
         parser.exit(2, f"methyldiver: error: {exc}\n")
     except KeyboardInterrupt:

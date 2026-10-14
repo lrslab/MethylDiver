@@ -3,8 +3,8 @@
 SAM tags: https://samtools.github.io/hts-specs/SAMtags.pdf
 Decoder: https://pysam.readthedocs.io/en/latest/api.html#pysam.AlignedSegment.modified_bases_forward
 
-Version 1 supports binary canonical C/5mC inputs, including C+m and G-m
-annotations. Implicit/skipped calls are missing, never invented probabilities.
+Supports 5mC and 5hmC at CpGs, using selected-modification-versus-rest states.
+Implicit/skipped calls are missing, never invented probabilities.
 """
 
 from array import array
@@ -108,9 +108,27 @@ def _tag(read, modern, historical):
 
 
 _GROUP = re.compile(r"([ACGTUN])([+-])([A-Za-z]+|[0-9]+)([.?]?)(?:,([0-9]+(?:,[0-9]+)*))?")
+MODIFICATION_CODES = {"5mC": ("m", 27551), "5hmC": ("h", 76792)}
+_CODE_NAMES = {code: name for name, codes in MODIFICATION_CODES.items() for code in codes}
 
 
-def _modification_profile(read, qc):
+def modification_config(modification):
+    if not isinstance(modification, str) or modification not in MODIFICATION_CODES:
+        raise ValueError("modification must be 5mC or 5hmC; only CpG context is supported.")
+    return {"modification": modification, "modification_context": "CpG",
+            "state_space": f"{modification}_vs_not_{modification}",
+            "pattern_states": {"1": modification, "0": f"not_{modification}", ".": "missing_or_uncertain"},
+            "implicit_and_unknown_calls": "missing", "ml_decoding": "(byte+0.5)/256"}
+
+
+def require_modification(qc_by_sample, modification):
+    """Check presence across the whole requested scope, not individual chunks."""
+    for sample, qc in qc_by_sample.items():
+        if qc.get("reads_eligible", 0) and not qc.get("reads_with_selected_modification_profile", 0):
+            raise ValueError(f"{sample}: no {modification} modification profile in eligible reads in the requested scope.")
+
+
+def _modification_profile(read, qc, modification="5mC"):
     """Validate tags, identify the single supported modification strand.
 
     Returns (decoded modifications in original read coordinates, ref strand),
@@ -133,6 +151,7 @@ def _modification_profile(read, qc):
         raise ValueError(f"Read {read.query_name}: malformed MM tag.")
     seen = set()
     target_strands = set()
+    target_present = False
     entries = 0
     for group in mm.split(";")[:-1]:
         match = _GROUP.fullmatch(group)
@@ -142,17 +161,18 @@ def _modification_profile(read, qc):
         modifications = [int(codes)] if codes.isdigit() else list(codes)
         entries += (len(deltas.split(",")) if deltas else 0) * len(modifications)
         for code in modifications:
-            key = (base, sign, code)
+            key = (base, sign, _CODE_NAMES.get(code, code))
             if key in seen:
                 raise ValueError(f"Read {read.query_name}: repeated modification group {key}.")
             seen.add(key)
         cytosine = (base, sign) in (("C", "+"), ("G", "-"))
         if cytosine:
-            if len(modifications) != 1 or modifications[0] not in ("m", 27551):
-                raise ValueError(f"Read {read.query_name}: competing/unsupported cytosine modifications; only binary C/5mC is supported.")
+            if any(code not in _CODE_NAMES for code in modifications):
+                raise ValueError(f"Read {read.query_name}: unsupported cytosine modification; only 5mC and 5hmC are supported.")
             target_strands.add((sign == "-") ^ read.is_reverse)
+            target_present |= any(code in MODIFICATION_CODES[modification] for code in modifications)
             qc["mm_unknown_skip_groups" if mode == "?" else "mm_implicit_skip_groups"] += 1
-        elif "m" in modifications or 27551 in modifications or base == "N":
+        elif any(code in _CODE_NAMES for code in modifications) or base == "N":
             raise ValueError(f"Read {read.query_name}: unsupported modification base/strand profile {group.split(',')[0]}.")
     if len(target_strands) > 1:
         raise ValueError(f"Read {read.query_name}: dual-strand cytosine calls require a separate molecule policy.")
@@ -162,32 +182,46 @@ def _modification_profile(read, qc):
     decoded = read.modified_bases_forward
     if decoded is None:
         raise ValueError(f"Read {read.query_name}: HTSlib could not decode MM/ML (invalid coordinates or tag contents).")
-    if not target_strands:
-        qc["reads_without_5mc_profile"] += 1
-        return None, fallback
-    qc["reads_with_5mc_profile"] += 1
+    # ML probabilities are absolute, not relative weights. Validate all
+    # overlapping m/h entries before selecting a target. Allow the integer
+    # boundary 256 for quantization; larger sums cannot describe alternatives.
+    totals = Counter()
+    for (base, strand, code), observations in decoded.items():
+        if code in _CODE_NAMES:
+            for position, probability in observations:
+                if probability >= 0:
+                    totals[base, strand, position] += probability
+    if any(total > 256 for total in totals.values()):
+        raise ValueError(f"Read {read.query_name}: overlapping 5mC/5hmC probabilities exceed 1 (ML byte sum >256).")
+    ref_strand = int(next(iter(target_strands))) if target_strands else fallback
+    if not target_present:
+        qc["reads_without_selected_modification_profile"] += 1
+        return None, ref_strand
+    qc["reads_with_selected_modification_profile"] += 1
     if ml is None:
         qc["reads_missing_ml"] += 1
-    return decoded, int(next(iter(target_strands)))
+    return decoded, ref_strand
 
 
-def decode_calls(read, anchors: set[int], threshold: float, min_base_quality: int, qc: Counter):
-    """Decode explicit C/5mC probabilities and map them to canonical anchors.
+def decode_calls(read, anchors: set[int], threshold: float, min_base_quality: int, qc: Counter,
+                 modification="5mC"):
+    """Decode selected-modification probabilities at canonical CpG anchors.
 
     Returns (anchor -> 0/1/None, modification-reference-strand).
     Unknown/implicit calls stay absent, and failed explicit calls stay None.
     """
-    decoded, ref_strand = _modification_profile(read, qc)
+    modification_config(modification)
+    decoded, ref_strand = _modification_profile(read, qc, modification)
     if decoded is None:
         return {}, ref_strand
     reference_positions = read.get_reference_positions(full_length=True)
     calls = {}
     qualities = read.query_qualities
-    for (base, original_strand, modification), observations in decoded.items():
-        if modification not in ("m", 27551):
+    for (base, original_strand, code), observations in decoded.items():
+        if code not in MODIFICATION_CODES[modification]:
             continue
         if (base, original_strand) not in (("C", 0), ("G", 1)):
-            raise ValueError(f"Read {read.query_name}: unsupported decoded 5mC profile.")
+            raise ValueError(f"Read {read.query_name}: unsupported decoded {modification} profile.")
         strand = original_strand ^ int(read.is_reverse)
         for forward_query, raw_probability in observations:
             query = read.query_length - 1 - forward_query if read.is_reverse else forward_query
@@ -216,10 +250,10 @@ def decode_calls(read, anchors: set[int], threshold: float, min_base_quality: in
             probability = (raw_probability + 0.5) / 256
             if probability >= threshold:
                 calls[anchor] = 1
-                qc["calls_methylated"] += 1
+                qc["calls_selected_modification"] += 1
             elif probability <= 1 - threshold:
                 calls[anchor] = 0
-                qc["calls_unmethylated"] += 1
+                qc["calls_not_selected_modification"] += 1
             else:
                 qc["calls_low_modification_confidence"] += 1
     return calls, ref_strand
@@ -256,7 +290,8 @@ def _extract(bam, region, positions, units, config):
                 raise ValueError(f"{region.region_id}: multiple primary records for the same MI molecule.")
             molecule_keys.add(molecule)
         qc["reads_eligible"] += 1
-        calls, strand = decode_calls(read, anchors, config["call_threshold"], config["min_base_quality"], qc)
+        calls, strand = decode_calls(read, anchors, config["call_threshold"], config["min_base_quality"], qc,
+                                     config["modification"])
         # Endpoints must span the modified positions (C on +, G on -).
         # Internal gaps remain missing; we never substitute the next called CpG.
         first = bisect_left(positions, read.reference_start - strand)
@@ -270,8 +305,6 @@ def _extract(bam, region, positions, units, config):
             qc["incomplete_patterns" if "." in pattern else "complete_patterns"] += 1
     if qc["reads_eligible"] and not qc["reads_with_mm"]:
         raise ValueError(f"{region.region_id}: no MM/Mm tags in eligible reads; input may not be a modBAM.")
-    if qc["reads_with_mm"] and not qc["reads_with_5mc_profile"]:
-        raise ValueError(f"{region.region_id}: no supported 5mC modification profile in eligible reads.")
     return patterns, dict(qc)
 
 
@@ -305,10 +338,10 @@ def _validate_parameters(k, call_threshold, min_mapq, min_base_quality, min_dept
     return k, integers
 
 
-def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8,
+def analyze_modbam(control, test, reference, regions, *, k=3, modification="5mC", call_threshold=0.8,
                    min_mapq=20, min_base_quality=10, min_depth=1,
                    max_total_bases=100_000, max_reads_per_region=100_000,
-                   max_pattern_evaluations=5_000_000):
+                   max_pattern_evaluations=5_000_000, _allow_absent_modification=False):
     """Compare indexed modBAMs over explicit nonoverlapping BED0 regions.
 
     Returns a run manifest and per-unit results. Depth filtering is a reporting
@@ -318,6 +351,7 @@ def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8
     that use case.
     """
     started_at = datetime.now(timezone.utc).isoformat()
+    modification_settings = modification_config(modification)
     k, integers = _validate_parameters(k, call_threshold, min_mapq, min_base_quality,
         min_depth, max_total_bases, max_reads_per_region, max_pattern_evaluations)
     regions = list(regions)
@@ -341,10 +375,9 @@ def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8
     if not fai.is_file():
         raise ValueError(f"Missing FASTA index: {fai}. Index the reference before running.")
     indexes = {role: _index_path(path) for role, path in sample_paths.items()}
-    config = {"k": k, "call_threshold": call_threshold, **integers,
-              "ml_decoding": "(byte+0.5)/256", "implicit_and_unknown_calls": "missing",
+    config = {"k": k, "call_threshold": call_threshold, **integers, **modification_settings,
               "read_filter": "primary_mapped_nonduplicate_nonqcfail", "exclude_mapq_255": True,
-              "state_space": "canonical_C_vs_5mC", "context_policy": "reference_CG_no_variant_mask",
+              "context_policy": "reference_CG_no_variant_mask",
               "unit_policy": "consecutive_reference_CpGs_full_dyads_within_each_region",
               "depth_policy": "report_flag_only_preserve_all_estimates"}
     inputs = {role: _file_identity(path) for role, path in sample_paths.items()}
@@ -395,12 +428,20 @@ def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8
                                    "n_reference_cpgs": len(positions), "n_units": len(units),
                                    "n_units_passing_min_depth": eligible,
                                    **{f"{role}_qc": qc for role, (patterns, qc) in extracted.items()}})
+    modification_qc = {role: Counter() for role in sample_paths}
+    for report in region_reports:
+        for role in sample_paths:
+            modification_qc[role].update({key: value for key, value in report[f"{role}_qc"].items()
+                                          if isinstance(value, int)})
+    modification_qc = {role: dict(qc) for role, qc in modification_qc.items()}
+    if not _allow_absent_modification:
+        require_modification(modification_qc, modification)
     # Abort if a source changed while it was being read; this is not a full BAM hash.
     for label, path in {**sample_paths, "reference": reference}.items():
         current = _file_identity(path)
         if any(current[key] != inputs[label][key] for key in ("bytes", "mtime_ns")):
             raise ValueError(f"{label} changed during analysis; output was not published.")
-    manifest = {"schema_version": "2.0", "package_version": __version__, "status": "complete",
+    manifest = {"schema_version": "2.1", "package_version": __version__, "status": "complete",
                 "started_at": started_at, "completed_at": datetime.now(timezone.utc).isoformat(),
                 "pysam_version": pysam.__version__, "htslib_version": pysam.__samtools_version__,
                 "method": "complete_read_plugin_explicit_modbam_calls",
@@ -409,6 +450,7 @@ def analyze_modbam(control, test, reference, regions, *, k=3, call_threshold=0.8
                 "reference_validation": "selected_contig_names_and_lengths_only; sequence_identity_not_proven",
                 "coordinate_system": "BED0_half_open; CpG_anchors_forward_reference_C",
                 "config": config, "inputs": inputs, "regions": region_reports,
+                "modification_qc": modification_qc,
                 "n_units": len(results), "n_units_passing_min_depth": sum(r["passes_min_depth"] for r in results),
                 "source_sha256": {name: _digest(Path(__file__).with_name(name)) for name in
                                   ("modbam.py", "metrics.py", "coordinates.py", "output.py", "cli.py", "__init__.py")}}
