@@ -19,6 +19,7 @@ methyldiver = "methyldiver.cli:main"
 
 [project.urls]
 Repository = "https://github.com/lxd98/MethylDiver"
+Documentation = "https://github.com/lxd98/MethylDiver_documentation"
 
 [tool.setuptools.packages.find]
 where = ["src"]
