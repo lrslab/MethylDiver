@@ -1,6 +1,6 @@
 # Select 5mC or 5hmC at CpGs
 
-MethylDiver 2.1.0 supports **5mCG and 5hmCG**: 5mC and 5hmC at reference CpG
+MethylDiver 2.3.0 supports **5mCG and 5hmCG**: 5mC and 5hmC at reference CpG
 sites. Both `compare` and `single` accept the following selections:
 
 | Option | Analysis |
@@ -91,6 +91,15 @@ positions, the 5mC and 5hmC ML byte sum must be at most 256; higher sums are
 incompatible with alternative modification probabilities. Selection does not
 bypass tag validation.
 
+One narrow compatibility exception handles an encoding observed in older
+Bonito/Remora COLO829 BAMs: an empty `MM` string accompanied by exactly one
+unsigned zero byte in `ML`. With no listed modification site, this byte
+cannot represent an unmethylated call. MethylDiver treats the read as missing
+modification evidence (`.`), counts it under
+`reads_empty_mm_zero_ml_placeholder` in the modification QC, and excludes
+its incomplete patterns from the metrics. Historical `Mm`/`Ml` tags receive
+the same handling. Other MM/ML length or type mismatches still fail validation.
+
 If a sample has eligible reads but no selected-modification profile anywhere
 in the requested analyzable scope, the run fails with a diagnostic. Absence in
 one region or chunk alone does not abort a run that has the target elsewhere.
@@ -116,8 +125,9 @@ MD_results/
     └── analysis_summary.json
 ```
 
-Single-sample runs use `two_metrics.tsv`. Selected-region runs use their usual
-`metrics.tsv` and `patterns.tsv` instead of `chunks.tsv`. Retention flags apply
+Single-sample runs use `two_metrics.tsv`. Small default serial region runs use
+`metrics.tsv` and `patterns.tsv` instead of `chunks.tsv`; large or parallel
+region runs use the chunked layout shown above. Retention flags apply
 independently to both target folders. The top-level summary links the two
 analyses; each child summary records its own parameters, inputs, metrics, and QC.
 
@@ -141,8 +151,8 @@ Rscript examples/plot_three_metrics.R \
 
 The R example reads the selected target from the adjacent child summary and
 labels 5hmC panels as hydroxymethylation. Older summaries without this field
-are interpreted as 5mC. `--min-depth` continues to report passing units rather
-than filter the saved plotting TSV.
+are interpreted as 5mC. `--min-depth` filters each target's metric TSV
+independently using its own complete-read depths.
 
 ## Python API
 

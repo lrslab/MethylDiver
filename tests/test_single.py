@@ -88,14 +88,14 @@ class TestSingle(unittest.TestCase):
             run = self.run_cli("single", "--input", self.bam, "--reference", self.ref,
                                *selection, *label_args, "--min-depth", 5, "--output", output)
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertIn("Plotting table: 10 rows", run.stdout)
+            self.assertIn("Plotting table: 0 rows", run.stdout)
             self.assertEqual({p.name for p in output.iterdir()},
                              {"two_metrics.tsv", "metrics.tsv", "patterns.tsv", "analysis_summary.json"})
             rows = self.parse(output / "two_metrics.tsv")
-            self.assertEqual(list(rows[0]), SINGLE_METRIC_SUMMARY_COLUMNS[:5] + [f"{label}_beta", f"{label}_entropy"])
-            # First unit has three complete reads; the next includes the missing fourth call.
-            self.assertEqual(float(rows[1][f"{label}_beta"]), 0.5)
-            self.assertAlmostEqual(float(rows[1][f"{label}_entropy"]), 1 / 3)
+            self.assertEqual(rows, [])
+            with (output / "two_metrics.tsv").open() as handle:
+                self.assertEqual(next(csv.reader(handle, delimiter="\t")),
+                                 SINGLE_METRIC_SUMMARY_COLUMNS[:5] + [f"{label}_beta", f"{label}_entropy"])
             full = self.parse(output / "metrics.tsv")
             self.assertEqual(len(full), 12)
             self.assertTrue(all(row["passes_min_depth"] == "0" for row in full))
@@ -104,6 +104,7 @@ class TestSingle(unittest.TestCase):
             manifest = json.loads((output / "analysis_summary.json").read_text())
             self.assertEqual(manifest["sample_labels"], {"sample": label})
             self.assertEqual(manifest["outputs"]["two_metrics.tsv"]["excluded_missing_metrics"], 2)
+            self.assertEqual(manifest["outputs"]["two_metrics.tsv"]["excluded_below_min_depth"], 10)
             if name == "bed":
                 self.assertIn("regions_bed_sha256", manifest)
 
@@ -121,7 +122,7 @@ class TestSingle(unittest.TestCase):
     def test_validation_and_failed_run_preserve_existing_work(self):
         ordinary = self.make_bam("ordinary.bam", tags=False)
         for extra in (["--sample-label", "bad name"], ["--N", "11"], ["--k", "3"],
-                      ["--test", self.bam], ["--keep-patterns", "T"], ["--threads", "2"]):
+                      ["--test", self.bam], ["--keep-patterns", "invalid"], ["--threads", "0"]):
             output = self.root / "invalid"
             run = self.run_cli("single", "--input", self.bam, "--reference", self.ref,
                                "--region", "chrA:0-24", "--output", output, *extra)

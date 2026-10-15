@@ -59,8 +59,15 @@ stopifnot(all(unique(dt$chrom) %in% contigs$chrom))
 stopifnot(all(dt$end <= contigs$length[match(dt$chrom, contigs$chrom)]))
 chrom_order <- contigs$chrom
 subject <- basename(dirname(input))
-footer <- sprintf("%s | %s to %s | %s at CpGs | N = %s | %s CpG units\nComplete metrics only; no minimum-depth filter applied. Exploratory analysis of one sample pair.",
-                  subject, control, test, modification, N_cpg, comma(n_units))
+depth_filtered <- identical(manifest$outputs[[basename(input)]]$row_filter,
+                            "complete_metrics_and_passes_min_depth")
+depth_note <- if (depth_filtered) {
+  sprintf("TSV filtered to at least %s complete reads in both samples.", manifest$config$min_depth)
+} else {
+  "No minimum-depth export filter confirmed; older runs used a reporting flag only."
+}
+footer <- sprintf("%s | %s to %s | %s at CpGs | N = %s | %s CpG units\n%s Exploratory analysis of one sample pair.",
+                  subject, control, test, modification, N_cpg, comma(n_units), depth_note)
 colors <- setNames(c("#24788C", "#CF683E"), c(control, test))
 theme_set(theme_bw(base_size = 11, base_family = "DejaVu Sans") +
   theme(panel.grid.minor = element_blank(), panel.grid.major = element_line(color = "#E9EDF0", linewidth = 0.25),
@@ -227,9 +234,8 @@ notes <- c("MethylDiver exploratory plots: one panel per PDF", paste("Input:", i
            paste("Samples:", control, "and", test), paste("CpGs per unit:", N_cpg),
            paste("Modification:", modification, "at CpGs; 0 means not the selected modification, not necessarily unmodified C."),
            "All TSV rows are used. No random subsampling is performed.",
-           "The TSV excludes missing metrics but has no read-depth columns; no minimum-depth filter can be applied from it alone.",
-           paste("The run summary reports", manifest$n_units_passing_min_depth, "units passing its depth threshold of", manifest$config$min_depth,
-                 "but the TSV does not identify those units."),
+           depth_note,
+           "The TSV has no read-depth columns; changing its threshold requires retained full tables or reanalysis.",
            "Overlapping units are not independent biological replicates. No significance tests or confidence intervals are plotted.",
            "Entropy and pattern distances are sensitive to complete-read depth. These figures are descriptive, not depth-controlled biological conclusions.",
            "Chromosome labels retain reference accessions exactly; no chromosome-name mapping is assumed.",

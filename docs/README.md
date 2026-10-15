@@ -1,6 +1,6 @@
 # MethylDiver documentation
 
-User documentation for **MethylDiver 2.1.0**, a tool for methylation level,
+User documentation for **MethylDiver 2.3.0**, a tool for methylation level,
 pattern entropy, and Epiallele distance from long-read modBAMs.
 
 [Software and quick start](https://github.com/lxd98/MethylDiver) ·
@@ -16,6 +16,7 @@ pattern entropy, and Epiallele distance from long-read modBAMs.
 | [Paired analysis](source/compare.md) | Genome analysis, sample labels, outputs, retention, and progress |
 | [Single-sample analysis](source/single.md) | Methylation and entropy from one modBAM |
 | [Selected regions](source/regions.md) | BED/interval input, coordinates, and region outputs |
+| [Region discovery](source/discover.md) | Descriptive high-ED window/BED ranking, candidate BEDs, and coverage checks |
 | [Command reference](source/commands.md) | All commands, options, and default values |
 | [Reading results](source/reading.md) | Parquet previews, filters, and TSV/CSV export |
 | [Examples and plotting](source/examples.md) | Synthetic inputs and individual ggplot2 PDF panels |

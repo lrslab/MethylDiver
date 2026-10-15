@@ -1,11 +1,11 @@
 project = "MethylDiver"
-release = "2.1.0"
-version = "2.1"
+release = "2.3.0"
+version = "2.3"
 extensions = ["myst_parser"]
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 master_doc = "index"
 exclude_patterns = []
 myst_heading_anchors = 3
 html_theme = "sphinx_rtd_theme"
-html_title = "MethylDiver 2.1.0 documentation"
+html_title = "MethylDiver 2.3.0 documentation"
 html_show_sourcelink = False

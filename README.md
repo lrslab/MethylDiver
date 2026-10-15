@@ -4,13 +4,14 @@
 methylation level, normalized pattern entropy, and Epiallele distance from
 molecular CpG patterns in modBAM files.
 
-**Version 2.1.0** · **Python 3.10+** · [Documentation](docs/README.md) · [Release notes](CHANGELOG.md)
+**Version 2.3.0** · **Python 3.10+** · [Documentation](docs/README.md) · [Release notes](CHANGELOG.md)
 
 | Command | Function |
 | --- | --- |
 | `compare` | Compare methylation, entropy, and epiallele distributions between two samples |
 | `single` | Calculate methylation and entropy for one sample |
 | `read` | Preview or export retained Parquet results |
+| `discover` | Rank high-ED genomic windows or BED regions from paired results |
 
 ## Installation
 
@@ -63,22 +64,36 @@ or `--modification 5mC,5hmC` to analyze both separately. Both commands support
 these choices; [modification selection](docs/source/modifications.md)
 explains mixed calls and binary pattern states.
 
-For selected regions, replace `--genome --threads 24` with
-`--region chr1:1000-2000` or `--regions-bed regions.bed`. Coordinates are
+For selected regions, replace `--genome` with
+`--region chr1:1000-2000` or `--regions-bed regions.bed`; `--threads 24`
+works for these modes too. Large BEDs are automatically processed in chunks.
+Coordinates are
 **zero-based, end-exclusive**. The output directory must be new.
 
 ## Output
 
+To find high-ED windows from paired results:
+
+```bash
+methyldiver discover --input MD_results --window-size 5000 \
+  --min-units 30 --min-ed 0.5 --output MD_discovery_5kb
+```
+
+This ranks median per-unit ED, without significance testing or read-depth
+filtering. See [region discovery](docs/source/discover.md).
+
 The main result is `three_metrics.tsv` for `compare` or `two_metrics.tsv` for
-`single`, with one row per CpG unit having all required metrics. Genome runs
+`single`, with one row per CpG unit passing the depth filter and having all required metrics. Chunked runs
 also produce `chunks.tsv` and `analysis_summary.json`.
 When both modifications are selected, each gets its own `5mC/` or `5hmC/`
 subfolder, with a top-level `analysis_summary.json` linking the two analyses.
 
 Only complete read patterns contribute to metrics; patterns containing `.`
-are excluded. **`--min-depth` reports passing units but does not filter the
-saved TSV.** Add `--keep-patterns T` to retain read depths, QC, and pattern
-counts for subsequent filtering in genome runs; these details are removed by default.
+are excluded. **`--min-depth` filters the saved metric TSV** (default 1):
+`single` requires the threshold in its sample, and `compare` requires it in
+**both** samples. This works with `--keep-patterns F`. Add `--keep-patterns T`
+to retain all counts, depths and QC, including below-threshold units, for
+subsequent re-filtering. Existing TSVs are not changed automatically.
 For each target, `1` means that modification and `0` means not that modification;
 `0` does not necessarily mean unmodified cytosine.
 
@@ -92,5 +107,5 @@ outputs, filtering, the Python API, and worked examples.
 - [Command reference](docs/source/commands.md)
 - [Call filtering and interpretation](docs/source/methods.md)
 
-Use `methyldiver compare --help`, `methyldiver single --help`, or
-`methyldiver read --help` for command-specific help.
+Use `methyldiver compare --help`, `methyldiver single --help`,
+`methyldiver read --help`, or `methyldiver discover --help` for command-specific help.

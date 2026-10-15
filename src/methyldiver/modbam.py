@@ -118,7 +118,8 @@ def modification_config(modification):
     return {"modification": modification, "modification_context": "CpG",
             "state_space": f"{modification}_vs_not_{modification}",
             "pattern_states": {"1": modification, "0": f"not_{modification}", ".": "missing_or_uncertain"},
-            "implicit_and_unknown_calls": "missing", "ml_decoding": "(byte+0.5)/256"}
+            "implicit_and_unknown_calls": "missing", "ml_decoding": "(byte+0.5)/256",
+            "empty_mm_zero_ml_placeholder": "missing"}
 
 
 def require_modification(qc_by_sample, modification):
@@ -149,6 +150,13 @@ def _modification_profile(read, qc, modification="5mC"):
         raise ValueError(f"Read {read.query_name}: MN does not match query length; modification tags may be stale.")
     if not isinstance(mm, str) or (mm and not mm.endswith(";")):
         raise ValueError(f"Read {read.query_name}: malformed MM tag.")
+    # Older Bonito/Remora BAMs can contain MM:Z: with ML:B:C,0.
+    # There is no site to which that byte can be assigned. Treat only this
+    # exact placeholder as absent evidence; all other length checks remain.
+    if mm == "" and isinstance(ml, array) and ml.typecode == "B" and list(ml) == [0]:
+        qc["reads_empty_mm_zero_ml_placeholder"] += 1
+        qc["reads_without_selected_modification_profile"] += 1
+        return None, fallback
     seen = set()
     target_strands = set()
     target_present = False
@@ -344,8 +352,8 @@ def analyze_modbam(control, test, reference, regions, *, k=3, modification="5mC"
                    max_pattern_evaluations=5_000_000, _allow_absent_modification=False):
     """Compare indexed modBAMs over explicit nonoverlapping BED0 regions.
 
-    Returns a run manifest and per-unit results. Depth filtering is a reporting
-    flag; all counts and point estimates are retained. No biological inference
+    Returns all per-unit counts and point estimates, with a depth flag used to
+    filter compact metric TSV exports. No biological inference
     or whole-genome enumeration is performed implicitly.
     ``test=None`` runs single-sample analysis; prefer analyze_single_modbam for
     that use case.
@@ -379,7 +387,7 @@ def analyze_modbam(control, test, reference, regions, *, k=3, modification="5mC"
               "read_filter": "primary_mapped_nonduplicate_nonqcfail", "exclude_mapq_255": True,
               "context_policy": "reference_CG_no_variant_mask",
               "unit_policy": "consecutive_reference_CpGs_full_dyads_within_each_region",
-              "depth_policy": "report_flag_only_preserve_all_estimates"}
+              "depth_policy": "filter_metric_tsv_preserve_full_counts"}
     inputs = {role: _file_identity(path) for role, path in sample_paths.items()}
     inputs["reference"] = _file_identity(reference)
     inputs["reference"]["fai_sha256"] = _digest(fai)

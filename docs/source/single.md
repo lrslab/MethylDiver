@@ -19,8 +19,9 @@ methyldiver single \
   --output MD_single_results
 ```
 
-For selected regions, replace `--genome --threads 24` with
-`--region chr1:1000-2000` or `--regions-bed regions.bed`. Region coordinates
+For selected regions, replace `--genome` with
+`--region chr1:1000-2000` or `--regions-bed regions.bed`, keeping `--threads 24`
+for parallel workers. Large requests split automatically. Region coordinates
 are 0-based and end-exclusive. Both modes use sliding units of N consecutive
 reference CpGs (default 3, supported 1–10). The sample is extracted once per
 region or genome chunk; no comparison metrics are calculated.
@@ -45,17 +46,18 @@ is `sample`. There are no delta or Epiallele distance columns.
 
 Only complete patterns contribute to β and H; a `.` at any of the N sites
 excludes that read from the unit's metrics. Rows without complete reads are
-omitted from `two_metrics.tsv`. `--min-depth` defaults to 1 and flags whether
-the sample reaches that complete-read depth; it does not remove valid estimates
-below the chosen threshold. Filtering and confidence defaults match `compare`:
+omitted from `two_metrics.tsv`. `--min-depth` defaults to 1 and filters this
+TSV to units with at least that many complete reads in the sample. Filtering
+applies even with `--keep-patterns F`. Filtering and confidence defaults match `compare`:
 mapping quality 20, base quality 10, and modification-call confidence 0.8.
 
-Genome options `--keep-patterns T` and `--chunk-manifests T` retain the same
+Processing options `--keep-patterns T` and `--chunk-manifests T` retain the same
 optional compressed folders as paired analysis; both default to False.
 Retained tables use the canonical `sample` role, e.g. `sample_beta`,
-`sample_n_complete_reads`, and `sample_000`. Selected-region runs also write
+`sample_n_complete_reads`, and `sample_000`. Small default serial region runs write
 `metrics.tsv` (all units, metrics, and depth/QC fields) and `patterns.tsv`
-(complete and incomplete counts); they do not write `chunks.tsv`.
+(complete and incomplete counts); they do not write `chunks.tsv`. Large or parallel
+region runs use the chunked layout instead. See [region analysis](regions.md).
 
 The reader detects single-sample metric tables automatically:
 

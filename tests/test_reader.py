@@ -133,8 +133,8 @@ class TestReader(unittest.TestCase):
                    control_n_complete_reads=0, test_n_complete_reads=5, control_beta=None, test_beta=0.5,
                    delta_beta=None, control_entropy=None, test_entropy=0.7, delta_entropy=None,
                    epiallele_distance=None, passes_min_depth=False, control_000=0)
-        complete = {**row, **{name: 0.0 for name in METRIC_VALUE_COLUMNS}, "control_n_complete_reads": 1}
-        cases = [row] + [{**complete, name: None} for name in METRIC_VALUE_COLUMNS] + [complete]
+        complete = {**row, **{name: 0.0 for name in METRIC_VALUE_COLUMNS}, "control_n_complete_reads": 5, "passes_min_depth": True}
+        cases = [row, {**complete, "passes_min_depth": False}] + [{**complete, name: None} for name in METRIC_VALUE_COLUMNS] + [complete]
         pq.write_table(pa.Table.from_pylist(cases), metrics)
         run = self.run_cli("--input", metrics, "--metrics-only", "--format", "csv", "--limit", 1)
         self.assertEqual(run.returncode, 0, run.stderr)

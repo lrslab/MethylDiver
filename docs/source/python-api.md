@@ -19,6 +19,26 @@ write_analysis(result, "single_region_results", sample_label="D0")
 #                       k=3, threads=24, sample_label="D0")
 ```
 
+For large or parallel selected-region analysis, use the streaming API instead
+of collecting all units with `analyze_modbam`:
+
+```python
+from methyldiver.modbam import read_regions_bed
+from methyldiver.genome import analyze_regions
+from pathlib import Path
+
+bed = Path("promoters.bed")
+analyze_regions("control.bam", "test.bam", "reference.fa",
+                read_regions_bed(bed), "promoter_results",
+                regions_bed=bed, threads=24, k=3, keep_patterns=True)
+# For a single sample, pass None instead of the test BAM.
+```
+
+This API requires the `[genome]` extra. `max_total_bases=100_000` controls the
+per-batch span target; `chunk_units=10_000` controls the requested units per
+chunk, reduced automatically for large N. The original in-memory extraction
+APIs keep their existing whole-request limits.
+
 The scalar metric functions also accept complete-pattern count vectors:
 
 ```python
@@ -44,7 +64,9 @@ Scalar counts are normalized to Python integers to avoid fixed-width overflow.
 If the total count is zero, β and H are `None`. If either comparison sample is
 empty, all comparison metrics are `None`. Analysis tables represent missing
 estimates as `NA` in TSV and null values in Parquet. Eligibility thresholds are
-separate from metric calculation; this package applies no default minimum-depth cutoff.
+separate from metric calculation: scalar metric functions and in-memory
+extraction retain all estimates. Compact TSV writers apply the extraction
+`min_depth` flag (default threshold 1), requiring both samples for comparisons.
 
 ## Pre-called read patterns and coordinates
 

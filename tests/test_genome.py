@@ -75,7 +75,7 @@ class TestGenome(unittest.TestCase):
         self.assertEqual(text.splitlines()[0].split("\t"), METRIC_SUMMARY_COLUMNS)
         self.assertEqual(summary_rows, [
             {name: str(format_cell(row[name])) for name in METRIC_SUMMARY_COLUMNS}
-            for row in actual if row["control_n_complete_reads"] > 0 and row["test_n_complete_reads"] > 0])
+            for row in actual if row["passes_min_depth"] and row["control_n_complete_reads"] > 0 and row["test_n_complete_reads"] > 0])
         incomplete = pq.read_table(directory / "incomplete_patterns").to_pylist()
         expected = analyze_modbam(self.control, self.test, self.ref,
             [Region(n, 0, len(s)) for n, s in self.sequences.items()], k=k, min_depth=5)["units"]
@@ -238,9 +238,10 @@ class TestGenome(unittest.TestCase):
                 root = json.loads((directory / "analysis_summary.json").read_text())
                 self.assertEqual(root["chunk_manifests"], mode)
                 details = root["outputs"]["three_metrics.tsv"]
-                self.assertEqual(details["rows"], 5)
-                self.assertEqual(details["rows"] + details["excluded_missing_metrics"], root["n_units"])
-                self.assertEqual(root["n_units_passing_min_depth"], 0)  # TSV retention is not a depth filter.
+                self.assertEqual(details["rows"], 0)
+                self.assertEqual(details["excluded_below_min_depth"], 5)
+                self.assertEqual(details["rows"] + details["excluded_missing_metrics"] + details["excluded_below_min_depth"], root["n_units"])
+                self.assertEqual(root["n_units_passing_min_depth"], 0)  # Low-depth estimates remain in retained Parquet only.
                 self.assertEqual(details["sha256"], hashlib.sha256((directory / "three_metrics.tsv").read_bytes()).hexdigest())
                 self.assert_matches_monolithic(directory, 3)
                 tables = [pq.read_table(directory / folder).to_pylist()
@@ -328,7 +329,8 @@ class TestGenome(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("methyldiver: analysis complete | elapsed", run.stdout)
         self.assertIn("Units analyzed: 7 | passing depth threshold: 0", run.stdout)
-        self.assertIn("Plotting table: 5 rows", run.stdout)
+        self.assertIn("Plotting table: 0 rows", run.stdout)
+        self.assertIn("omitted below minimum depth: 5", run.stdout)
         self.assertIn("chunk_manifests/", run.stdout)
         self.assertIn("incomplete_patterns/", run.stdout)
         self.assertIn("complete_patterns/", run.stdout)
@@ -360,14 +362,12 @@ class TestGenome(unittest.TestCase):
         self.assertIn("Files: three_metrics.tsv, chunks.tsv, analysis_summary.json", run.stdout)
         self.assertEqual({p.name for p in default_output.iterdir()}, {"three_metrics.tsv", "chunks.tsv", "analysis_summary.json"})
         for options in (["--genome", "--region", "chrA:0-6"], ["--genome", "--max-total-bases", "100"],
-                        ["--region", "chrA:0-6", "--chunk-manifests", "False"],
-                        ["--region", "chrA:0-6", "--keep-patterns", "False"],
                         ["--genome", "--keep-patterns", "invalid"],
                         ["--genome", "--chunk-manifests", "invalid"],
                         ["--genome", "--chunk-manifests", "json"],
                         ["--genome", "--chunk-manifests", "gzip"],
                         ["--genome", "--chunk-manifests", "none"],
-                        ["--region", "chrA:0-6", "--threads", "2"], ["--genome", "--chunk-units", "0"]):
+                        ["--region", "chrA:0-6", "--threads", "0"], ["--genome", "--chunk-units", "0"]):
             run = subprocess.run(base[:-1] + [str(self.root / "bad_cli")] + options, capture_output=True, text=True)
             self.assertEqual(run.returncode, 2, run.stderr)
             self.assertNotIn("Traceback", run.stderr)

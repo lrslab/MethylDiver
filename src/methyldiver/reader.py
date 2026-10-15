@@ -29,7 +29,7 @@ def saved_sample_labels(source):
 def read_results(source, *, output=None, limit=20, chrom=None, sample=None, pattern=None,
                  output_format=None, columns=None, drop_na_metrics=False,
                  control_label="control", test_label="test", sample_label="sample",
-                 metrics_only=False, progress=None):
+                 metrics_only=False, require_min_depth=False, progress=None):
     """Preview/export a Parquet file or dataset; return the number of rows written.
 
     Output defaults to stdout. ``limit=None`` exports all matching rows in
@@ -38,7 +38,9 @@ def read_results(source, *, output=None, limit=20, chrom=None, sample=None, patt
     Format defaults to CSV for a .csv destination, otherwise TSV. ``columns``
     optionally selects fields in output order.
     ``metrics_only`` selects plotting columns for the detected sample mode and
-    drops missing metrics. ``drop_na_metrics`` also drops missing metrics with
+    drops missing metrics and rows failing the stored depth flag.
+    ``require_min_depth`` applies the same depth filter with explicit columns.
+    ``drop_na_metrics`` also drops missing metrics with
     explicit columns: two values for single-sample tables, seven for paired.
     Sample labels rename beta/entropy headings only; stored roles and values
     remain unchanged. Label discovery is handled by the CLI.
@@ -79,6 +81,7 @@ def read_results(source, *, output=None, limit=20, chrom=None, sample=None, patt
     if metrics_only:
         columns = metric_columns(single)
         drop_na_metrics = True
+        require_min_depth = True
     expression = None
     for name, value in (("chrom", chrom), ("sample", sample), ("pattern", pattern)):
         if value is None:
@@ -100,6 +103,11 @@ def read_results(source, *, output=None, limit=20, chrom=None, sample=None, patt
                 raise ValueError(f"Input is missing required metric column: {name}")
             predicate = ds.field(name).is_valid()
             expression = predicate if expression is None else expression & predicate
+    if require_min_depth:
+        if "passes_min_depth" not in dataset.schema.names:
+            raise ValueError("Input is missing required depth column: passes_min_depth")
+        predicate = ds.field("passes_min_depth") == True
+        expression = predicate if expression is None else expression & predicate
     scanner = dataset.scanner(columns=columns, filter=expression, batch_size=4096, use_threads=False,
                               batch_readahead=1, fragment_readahead=1)
 

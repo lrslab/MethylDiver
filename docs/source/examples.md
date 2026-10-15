@@ -42,9 +42,10 @@ threshold, not a complete-read depth threshold. Sparse inputs can have empty
 panels where these display thresholds are not met.
 
 These are exploratory plots of all rows in the supplied table. The plotting
-TSV excludes missing metrics but **does not filter on `--min-depth`** and has
-no depth columns. To apply a depth filter later, run with `--keep-patterns T`
-and use the retained complete-pattern metrics to select units. The example
+TSV excludes missing metrics and, for new runs, units failing `--min-depth`.
+It has no depth columns. The plot caption reads the saved export policy to
+distinguish new filtered runs from older reporting-only runs. To change the
+threshold later, retain the complete-pattern tables with `--keep-patterns T`. The example
 provides no P values, significance tests, or confidence intervals.
 
 For a two-target run, use `MD_results/5mC/three_metrics.tsv` or

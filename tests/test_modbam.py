@@ -115,6 +115,47 @@ class TestModBAM(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no MM/Mm"):
             self.analyze(ordinary)
 
+    def test_empty_mm_zero_ml_placeholder_is_missing(self):
+        placeholders = []
+        for reverse in (False, True):
+            for historical in (False, True):
+                read = make_read(f"empty_{reverse}_{historical}", reverse=reverse, mm="", ml=[0])
+                if historical:
+                    read.set_tag("MM", None)
+                    read.set_tag("ML", None)
+                    read.set_tag("Mm", "")
+                    read.set_tag("Ml", array("B", [0]))
+                for modification in ("5mC", "5hmC"):
+                    qc = Counter()
+                    calls, strand = decode_calls(read, {2, 6, 10}, 0.8, 10, qc, modification)
+                    self.assertEqual(calls, {})
+                    self.assertEqual(strand, int(reverse))
+                    self.assertEqual(qc["reads_empty_mm_zero_ml_placeholder"], 1)
+                    self.assertEqual(qc["reads_with_selected_modification_profile"], 0)
+                placeholders.append(read)
+        result = self.analyze(self.bam("placeholders.bam", [make_read("valid")] + placeholders))
+        sample = result["units"][0]["control"]
+        self.assertEqual(sample["n_candidate_reads"], 5)
+        self.assertEqual(sample["n_complete_reads"], 1)
+        self.assertEqual(sample["incomplete_patterns"], {"...": 4})
+        self.assertEqual(sample["beta"], 2 / 3)
+        qc = result["manifest"]["modification_qc"]["control"]
+        self.assertEqual(qc["reads_empty_mm_zero_ml_placeholder"], 4)
+        with self.assertRaisesRegex(ValueError, "no 5mC modification profile"):
+            self.analyze(self.bam("only_placeholders.bam", placeholders))
+
+    def test_empty_mm_placeholder_exception_is_narrow(self):
+        for ml in (array("B", [1]), array("B", [0, 0]), array("H", [0])):
+            with self.subTest(ml=ml):
+                read = make_read(mm="", ml=[])
+                read.set_tag("ML", ml)
+                with self.assertRaisesRegex(ValueError, "ML must be a byte array"):
+                    decode_calls(read, {2, 6, 10}, 0.8, 10, Counter())
+        stale = make_read(mm="", ml=[0])
+        stale.set_tag("MN", 1)
+        with self.assertRaisesRegex(ValueError, "MN does not match"):
+            decode_calls(stale, {2, 6, 10}, 0.8, 10, Counter())
+
     def test_cigar_deletion_skip_insertion_and_soft_clip(self):
         reads = [
             make_read("deletion", sequence=SEQUENCE[:6] + SEQUENCE[7:], cigar="6M1D7M", mm="C+m?,0,0;", ml=[255, 0]),
@@ -284,7 +325,7 @@ class TestModBAM(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             write_analysis(result, output)
 
-    def test_tsv_omits_missing_metrics_but_retains_valid_low_depth(self):
+    def test_tsv_omits_missing_metrics_and_valid_low_depth(self):
         bam = self.bam("one_read.bam", [make_read()])
         empty = self.bam("no_reads.bam", [])
         for test, expected in ((empty, 0), (bam, 1)):
@@ -293,14 +334,15 @@ class TestModBAM(unittest.TestCase):
             write_analysis(result, output)
             with (output / "three_metrics.tsv").open() as handle:
                 rows = list(csv.DictReader(handle, delimiter="\t"))
-            self.assertEqual(len(rows), expected)
+            self.assertEqual(len(rows), 0)
             self.assertTrue(all("NA" not in row.values() for row in rows))
             with (output / "metrics.tsv").open() as handle:
                 full = list(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(len(full), 1)
             self.assertEqual(full[0]["passes_min_depth"], "0")
             manifest = json.loads((output / "analysis_summary.json").read_text())
-            self.assertEqual(manifest["outputs"]["three_metrics.tsv"]["rows"], expected)
+            self.assertEqual(manifest["outputs"]["three_metrics.tsv"]["rows"], 0)
+            self.assertEqual(manifest["outputs"]["three_metrics.tsv"]["excluded_below_min_depth"], expected)
             self.assertEqual(manifest["outputs"]["three_metrics.tsv"]["excluded_missing_metrics"], 1 - expected)
 
     def test_custom_sample_labels_for_region_cli(self):

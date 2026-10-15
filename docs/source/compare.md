@@ -61,13 +61,14 @@ the default becomes 976 units per chunk for `compare`, or 1,953 for `single`.
 `analysis_summary.json` records both
 `requested_chunk_units` and the effective `chunk_units`. This bounds the count
 vectors, not total memory: worker count, read depth, and incomplete patterns
-also affect memory use. Selected-region analysis applies the same count-entry
-limit across its regions; split large requests or use `--genome` if it is exceeded.
+also affect memory use. Large or parallel selected-region requests use the same
+chunked processing automatically; see [BED and region analysis](regions.md).
 Larger N also requires complete calls at more sites, which can reduce usable
 read depth. All N sites must be called for a read to contribute to the metrics.
 
 **`--min-depth` is user-adjustable and defaults to 1.** The example uses 5;
-this only sets `passes_min_depth`. Valid estimates are retained in the plotting TSV. Add `--keep-patterns T`
+a unit enters `three_metrics.tsv` only when **both samples** have at least
+five complete reads and all metrics are available. Add `--keep-patterns T`
 to retain complete-read counts and apply another depth threshold later without
 extracting BAMs again.
 No threshold is a universal guarantee of statistical reliability.
@@ -93,7 +94,8 @@ The default genome output contains only `three_metrics.tsv`, `chunks.tsv`, and
 `incomplete_patterns/`. With `--keep-patterns F` (default), those folders are
 removed after the plotting table is produced. To keep compressed chunk metadata,
 add `--chunk-manifests T`; its default is also `F`. The two options are independent
-and apply to genome mode only. Existing runs are not renamed or deleted.
+and work for genome and selected-region modes. Specifying either option in
+selected-region mode selects chunked output. Existing runs are not renamed or deleted.
 
 `incomplete_patterns/` contains **incomplete patterns only**. Complete binary-pattern
 counts and per-unit QC are in `complete_patterns/` when retained. Older runs used
@@ -103,9 +105,8 @@ accepts those directory names.
 `three_metrics.tsv` is generated automatically for both genome and selected-region
 analyses. It contains **one row per CpG unit with all seven metric values
 available**, not a whole-sample average. Rows with `NA` in any metric column are
-omitted from this TSV. Valid zero values are retained, as are units below
-`--min-depth` when their metrics are available; removing missing estimates is
-not a minimum-depth filter. Columns are separated by literal tab characters.
+omitted from this TSV, as are units below `--min-depth` in either sample.
+Valid zero values are retained when the unit passes the depth threshold. Columns are separated by literal tab characters.
 `cpg_anchors` is an unquoted, comma-separated list of zero-based positions in
 one field, for example `3041,3043,3046` between two tabs.
 Coordinates use BED0 half-open intervals. The columns, in order, are:
@@ -124,7 +125,7 @@ reader's chromosome filter for a smaller table to inspect.
 Keep pattern tables if you want to change depth filters or inspect detailed QC
 later. With the default `F`, these details must be regenerated from the BAMs.
 
-Use `--chunk-manifests` with `--genome` to choose how per-chunk metadata is saved:
+Use `--chunk-manifests` to choose how per-chunk metadata is saved:
 
 | Option | Behavior |
 | --- | --- |

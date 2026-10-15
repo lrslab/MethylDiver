@@ -35,3 +35,12 @@ Mixed-modification regression tests cover combined/separate and numeric tags,
 both alignment/modification orientations, confidence thresholds, missing target
 calls, invalid probability sums, known target-specific distributions, paired/
 single agreement, serial/parallel chunks, and cleanup of failed two-target runs.
+
+Selected-region tests check automatic batching, original region IDs, boundary
+units, serial/parallel equivalence, and BED validation. Depth-filter regression
+tests verify the cutoff in single/paired, genome/region, and retained/discarded
+pattern modes, including re-export with `read --metrics-only`.
+
+Discovery tests cover fixed windows and supplied BED regions, full containment,
+ranking and ties, empty inputs, malformed or unsorted tables, input changes,
+CLI validation, and output cleanup.

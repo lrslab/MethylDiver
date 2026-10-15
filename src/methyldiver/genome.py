@@ -1,6 +1,6 @@
-"""Explicit, parallel genome analysis using the unchanged modBAM estimators.
+"""Parallel genome and selected-region analysis using the modBAM estimators.
 
-Parquet is optional and imported only for genome runs. Chunking preserves
+Parquet is optional and imported only for chunked runs. Chunking preserves
 every reference-CpG unit, including units spanning sequence-scan boundaries.
 """
 
@@ -24,7 +24,8 @@ from . import __version__
 from .coordinates import MAX_DENSE_COUNT_CELLS
 from .modbam import (Region, _digest, _file_identity, _index_path,
                      _validate_parameters, analyze_modbam, modification_config, require_modification)
-from .output import (has_complete_metrics, sample_labels, single_sample_labels,
+from .output import (has_complete_metrics, passes_metric_filter, metric_filter_summary, DEPTH_POLICY,
+                     sample_labels, single_sample_labels,
                      metric_columns, metric_filename)
 from .reader import read_results
 
@@ -34,7 +35,7 @@ def _arrow():
         import pyarrow as pa
         import pyarrow.parquet as pq
     except ImportError as exc:
-        raise ImportError("Genome mode requires pyarrow; install MethylDiver with the [genome] extra.") from exc
+        raise ImportError("Chunked genome/region analysis requires pyarrow; install MethylDiver with the [genome] extra.") from exc
     return pa, pq
 
 
@@ -121,6 +122,7 @@ def _write_chunk(result, stage, name, chunk_manifests, keep_patterns):
     manifest = dict(result["manifest"])
     manifest["outputs"] = outputs
     manifest["n_units_with_metrics"] = sum(has_complete_metrics(row, single) for row in rows)
+    manifest["n_units_exported"] = sum(passes_metric_filter(row, single) for row in rows)
     relative = manifest_hash = None
     if chunk_manifests:
         relative = f"chunk_manifests/{name}.json.gz"
@@ -132,28 +134,37 @@ def _write_chunk(result, stage, name, chunk_manifests, keep_patterns):
     return {"id": name, "n_units": len(rows), "n_units_passing_min_depth": manifest["n_units_passing_min_depth"],
             "modification_qc": manifest["modification_qc"],
             "n_units_with_metrics": manifest["n_units_with_metrics"],
+            "n_units_exported": manifest["n_units_exported"],
             "manifest": relative, "manifest_sha256": manifest_hash, "outputs": outputs}
 
 
 def _run_chunk(payload):
     job, inputs, settings, stage, chunk_manifests, keep_patterns = payload
-    region = Region(job["chrom"], job["start"], job["end"], job["id"])
-    result = analyze_modbam(*inputs, [region], max_total_bases=region.end - region.start,
+    parts = job.get("parts", [{**job, "region_id": job["id"]}])
+    regions = [Region(p["chrom"], p["start"], p["end"], p["region_id"]) for p in parts]
+    result = analyze_modbam(*inputs, regions, max_total_bases=sum(r.end - r.start for r in regions),
                            _allow_absent_modification=True, **settings)
     units = result["units"]
-    if (len(units) != job["n_units"] or units[0]["start"] != job["first_anchor"]
-            or units[-1]["start"] != job["last_anchor"]):
+    offset = 0
+    for part in parts:
+        subset = units[offset:offset + part["n_units"]]
+        if (len(subset) != part["n_units"] or subset[0]["start"] != part["first_anchor"]
+                or subset[-1]["start"] != part["last_anchor"]
+                or any(u["region_id"] != part["region_id"] for u in subset)):
+            raise ValueError(f"Reference CpG units changed after planning chunk {job['id']}.")
+        offset += part["n_units"]
+    if len(units) != job["n_units"]:
         raise ValueError(f"Reference CpG units changed after planning chunk {job['id']}.")
     return _write_chunk(result, stage, job["id"], chunk_manifests, keep_patterns)
 
 
-def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=10_000,
+def _analyze_chunked(control, test, reference, output, *, threads=1, chunk_units=10_000,
                    chunk_manifests=False, keep_patterns=False,
                    control_label="control", test_label="test", sample_label="sample",
                    k=3, modification="5mC", call_threshold=0.8, min_mapq=20, min_base_quality=10, min_depth=1,
                    max_reads_per_region=100_000, max_pattern_evaluations=5_000_000,
-                   progress=None, status=None):
-    """Write every CpG unit on the BAM reference contigs to a new directory.
+                   progress=None, status=None, regions=None, max_total_bases=100_000, regions_bed=None):
+    """Write CpG units across the genome or independent selected regions.
 
     ``threads`` controls worker processes. ``progress(done, total, units)`` is
     optional and runs in the parent. ``status(phase, done, total)`` reports TSV
@@ -168,6 +179,17 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
     that use case.
     """
     single = test is None
+    selected = regions is not None
+    bed_path = Path(regions_bed).resolve() if regions_bed is not None else None
+    bed_hash = None
+    if bed_path is not None:
+        from .modbam import read_regions_bed
+        bed_hash = _digest(bed_path)
+        regions = read_regions_bed(bed_path)
+        if bed_hash != _digest(bed_path):
+            raise ValueError("Regions BED changed while reading it.")
+    if selected:
+        regions = list(regions)
     modification_settings = modification_config(modification)
     roles = ("sample",) if single else ("control", "test")
     labels = single_sample_labels(sample_label) if single else sample_labels(control_label, test_label)
@@ -183,7 +205,7 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ValueError(f"{name} must be an integer >= 1.")
     k, _ = _validate_parameters(k, call_threshold, min_mapq, min_base_quality, min_depth,
-                                1, max_reads_per_region, max_pattern_evaluations)
+                                max_total_bases if selected else 1, max_reads_per_region, max_pattern_evaluations)
     requested_chunk_units = chunk_units
     chunk_units = min(chunk_units, MAX_DENSE_COUNT_CELLS // (len(roles) * (2 ** k)))
     pa, pq = _arrow()
@@ -209,13 +231,23 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
                 raise ValueError(f"{label}: input must be an indexed BAM.")
         dictionaries = [dict(zip(bam.references, bam.lengths)) for bam in bams.values()]
         ar, fr = dictionaries[0], dict(zip(fasta.references, fasta.lengths))
-        if not ar or any(other != ar for other in dictionaries[1:]):
-            raise ValueError("Genome mode requires matching nonempty control/test BAM reference dictionaries." if not single
-                             else "Genome mode requires a nonempty BAM reference dictionary.")
-        if any(fr.get(chrom) != length for chrom, length in ar.items()):
-            raise ValueError("BAM/FASTA contig names or lengths do not match.")
-        jobs, contigs = _plan(fasta, list(ar.items()), k, chunk_units)
-        unused = [chrom for chrom in fasta.references if chrom not in ar]
+        if selected:
+            from .regions import plan_regions, validate_regions
+            validate_regions(regions, [fr, *dictionaries])
+            jobs, region_reports = plan_regions(fasta, regions, k, chunk_units, max_total_bases)
+            used = {r.chrom for r in regions}
+            contigs = [{"chrom": chrom, "length": fr[chrom],
+                        "n_units": sum(r["n_units"] for r in region_reports if r["chrom"] == chrom)}
+                       for chrom in dict.fromkeys(r.chrom for r in regions)]
+        else:
+            if not ar or any(other != ar for other in dictionaries[1:]):
+                raise ValueError("Genome mode requires matching nonempty control/test BAM reference dictionaries." if not single
+                                 else "Genome mode requires a nonempty BAM reference dictionary.")
+            if any(fr.get(chrom) != length for chrom, length in ar.items()):
+                raise ValueError("BAM/FASTA contig names or lengths do not match.")
+            jobs, contigs = _plan(fasta, list(ar.items()), k, chunk_units)
+            used = set(ar)
+        unused = [chrom for chrom in fasta.references if chrom not in used]
         headers = {role: bam.header.to_dict() for role, bam in bams.items()}
     settings = {"k": k, "modification": modification, "call_threshold": call_threshold, "min_mapq": min_mapq,
                 "min_base_quality": min_base_quality, "min_depth": min_depth,
@@ -228,9 +260,9 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
         if chunk_manifests:
             (stage / "chunk_manifests").mkdir()
         with (stage / "chunks.tsv").open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=["id", "chrom", "start", "end", "first_anchor", "last_anchor", "n_units"], delimiter="\t", lineterminator="\n")
+            writer = csv.DictWriter(handle, fieldnames=["id"] + (["region_id"] if selected else []) + ["chrom", "start", "end", "first_anchor", "last_anchor", "n_units"], delimiter="\t", lineterminator="\n")
             writer.writeheader()
-            writer.writerows(jobs)
+            writer.writerows(({"id": j["id"], **p} for j in jobs for p in j["parts"]) if selected else jobs)
         summaries = []
         completed_units = 0
         def record(summary):
@@ -277,7 +309,7 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
             for folder, schema in zip(("complete_patterns", "incomplete_patterns"), _schemas(k, single)):
                 pq.write_table(pa.Table.from_pylist([], schema=schema), stage / folder / "empty.parquet", compression="zstd")
         if completed_units != sum(c["n_units"] for c in contigs):
-            raise ValueError("Genome unit count differs from the reference plan.")
+            raise ValueError("Analysis unit count differs from the reference plan.")
         modification_qc = {role: dict(sum((Counter(s["modification_qc"][role]) for s in summaries), Counter()))
                            for role in roles}
         require_modification(modification_qc, modification)
@@ -287,26 +319,30 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
                 raise ValueError(f"Input changed during genome analysis: {path}")
         if index_hashes != [_digest(path) for path in indexes]:
             raise ValueError("An input index changed during genome analysis.")
-        expected_rows = sum(s["n_units_with_metrics"] for s in summaries)
+        if bed_path is not None and _digest(bed_path) != bed_hash:
+            raise ValueError("Regions BED changed during analysis.")
+        complete_rows = sum(s["n_units_with_metrics"] for s in summaries)
+        expected_rows = sum(s["n_units_exported"] for s in summaries)
         if status is not None:
             status("write TSV", 0, expected_rows)
         def export_progress(rows):
             if status is not None:
                 status("write TSV", rows, expected_rows)
         summary_rows = read_results(stage / "complete_patterns", output=stage / summary_name,
-                                limit=None, columns=summary_columns, drop_na_metrics=True,
+                                limit=None, columns=summary_columns, drop_na_metrics=True, require_min_depth=True,
                                 control_label=control_label, test_label=test_label, sample_label=sample_label,
                                 progress=export_progress)
         if summary_rows != expected_rows:
-            raise ValueError("TSV unit count differs from units with all metric values present.")
+            raise ValueError("TSV unit count differs from units passing the metric and depth filters.")
         if status is not None:
             status("finalize", None, None)
         if not keep_patterns:
             for folder in ("complete_patterns", "incomplete_patterns"):
                 shutil.rmtree(stage / folder)
         manifest = {"schema_version": "2.1", "package_version": __version__, "status": "complete",
-            "mode": "genome", "started_at": started, "completed_at": datetime.now(timezone.utc).isoformat(),
-            "scope": "every consecutive reference-CpG unit on all BAM reference contigs",
+            "mode": "regions" if selected else "genome", "started_at": started, "completed_at": datetime.now(timezone.utc).isoformat(),
+            "scope": ("consecutive reference-CpG units fully contained within each requested region" if selected
+                      else "every consecutive reference-CpG unit on all BAM reference contigs"),
             "coordinate_system": "BED0_half_open; CpG_anchors_forward_reference_C",
             "analysis_type": "single" if single else "paired",
             "config": {**settings, **modification_settings}, "threads": threads,
@@ -318,11 +354,10 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
             "keep_patterns": keep_patterns,
             "contigs": contigs, "unused_fasta_contigs": unused,
             "boundary_policy": "chunks share k-1 CpGs; every complete unit belongs to exactly one chunk",
-            "depth_policy": "report_flag_only_preserve_all_estimates",
+            "depth_policy": DEPTH_POLICY,
             "output_format": f"per-unit {summary_name}; optional Parquet datasets complete_patterns and incomplete_patterns",
-            "outputs": {summary_name: {"rows": summary_rows, "sha256": _digest(stage / summary_name),
-                "excluded_missing_metrics": completed_units - summary_rows,
-                "row_filter": "both_metric_values_present" if single else "all_seven_metric_values_present"}},
+            "outputs": {summary_name: {"sha256": _digest(stage / summary_name),
+                **metric_filter_summary(completed_units, complete_rows, summary_rows, min_depth, single)}},
             "reference_validation": "BAM/FASTA contig names and lengths; sequence identity not proven",
             "inputs": dict(zip((*roles, "reference", *(f"{role}_index" for role in roles), "reference_index"), identities)),
             "index_sha256": dict(zip((*roles, "reference"), index_hashes)),
@@ -331,7 +366,15 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
             "chunks": sorted(summaries, key=lambda s: s["id"]),
             "pysam_version": pysam.__version__, "pyarrow_version": pa.__version__,
             "source_sha256": {name: _digest(Path(__file__).with_name(name)) for name in
-                ("genome.py", "modbam.py", "metrics.py", "coordinates.py", "output.py", "reader.py", "progress.py", "cli.py", "__init__.py")}}
+                ("genome.py", "regions.py", "modbam.py", "metrics.py", "coordinates.py", "output.py", "reader.py", "progress.py", "cli.py", "__init__.py")}}
+        if selected:
+            manifest.update({"regions": region_reports, "n_regions": len(regions),
+                             "total_region_bases": sum(r.end - r.start for r in regions),
+                             "max_total_bases": max_total_bases,
+                             "region_batching": "span_and_unit_count; a single sparse unit may exceed the span target",
+                             "qc_counting": "read processing occurrences across chunks/regions, not unique reads"})
+            if bed_path is not None:
+                manifest.update({"regions_bed": str(bed_path), "regions_bed_sha256": bed_hash})
         manifest["chunks_tsv_sha256"] = _digest(stage / "chunks.tsv")
         (stage / "analysis_summary.json").write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n", encoding="utf-8")
         if os.path.lexists(output):
@@ -341,6 +384,23 @@ def analyze_genome(control, test, reference, output, *, threads=1, chunk_units=1
     finally:
         if stage.exists():
             shutil.rmtree(stage)
+
+
+def analyze_genome(control, test, reference, output, **kwargs):
+    """Stream all reference-CpG units across BAM contigs into a new directory."""
+    return _analyze_chunked(control, test, reference, output, **kwargs)
+
+
+def analyze_regions(control, test, reference, regions, output, **kwargs):
+    """Stream independent selected regions, with automatic batches and workers.
+
+    max_total_bases (default 100,000) is a per-batch span target, not a
+    whole-request limit. Other options follow analyze_genome. Original region
+    IDs survive chunking; units never bridge separate input regions.
+    """
+    if regions is None:
+        raise ValueError("Supply at least one explicit Region or BED interval.")
+    return _analyze_chunked(control, test, reference, output, regions=regions, **kwargs)
 
 
 def analyze_single_genome(sample, reference, output, **kwargs):

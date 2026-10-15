@@ -1,5 +1,55 @@
 # Changelog
 
+## 2.3.0 - 2026-10-15
+
+- Extend `discover` with `--regions-bed` to rank nonoverlapping promoter or
+  other BED3/4 regions using fully contained units and the existing ED rules.
+  Retain region IDs and exact boundaries; validate overlap, IDs, and input changes.
+
+- Make `--min-depth` filter `two_metrics.tsv` and `three_metrics.tsv` in
+  single, paired, genome, BED and region analyses, including `--keep-patterns F`.
+  Require the threshold in the single sample or in both comparison samples.
+  The default remains 1; pass `--min-depth 5` to require five complete reads.
+- Preserve all units in retained full count/QC tables and the in-memory API.
+  `read --metrics-only` now also requires the stored depth flag, including
+  when re-exporting older retained results.
+- Record the export depth policy and separate missing-metric exclusions from
+  otherwise valid units excluded for low depth. Existing results are unchanged;
+  rerun analysis or re-export retained tables to produce a filtered TSV.
+
+- Add `methyldiver discover` to stream paired metric TSVs into fixed genomic
+  windows and rank high median ED candidates. Defaults: 5 kb, at least 30
+  observed units, median ED >=0.5, and the top 100 candidates.
+- Export all window statistics, ranked candidates, a BED4 for reanalysis,
+  and a discovery summary. Exclude and count boundary-crossing units;
+  reject unsorted input, duplicate unit starts, and malformed metrics.
+- This is descriptive screening without p-values, FDR, or read-depth
+  filtering; coverage must be checked before interpreting candidates.
+
+## 2.2.0 - 2026-10-14
+
+- Automatically batch large `--regions-bed` and repeated `--region` requests;
+  users can supply a full promoter BED without splitting it externally.
+- Enable `--threads`, `--chunk-units`, `--keep-patterns`, and
+  `--chunk-manifests` for selected regions in both `compare` and `single`.
+- Plan chunks from reference CpG counts and genomic span. Preserve original
+  region IDs, every boundary-spanning unit, and separation between input regions.
+- Treat CLI `--max-total-bases` as a per-batch span target (default 100,000).
+  A single sparse unit can exceed the target to preserve its complete span.
+- Stream chunk results to disk with bounded worker queues and the genome-style
+  output layout. Small default serial runs keep their existing TSV layout.
+- Add the streaming Python API `methyldiver.genome.analyze_regions`;
+  the in-memory `analyze_modbam` API retains its existing safety limits.
+
+## 2.1.1 - 2026-10-14
+
+- Handle empty MM tags with a single unsigned zero ML byte, as observed in
+  older Bonito/Remora COLO829 BAMs, as missing modification evidence. Count
+  these reads in QC; never convert the placeholder to an unmethylated call.
+- Preserve validation of all other ML length/type mismatches and stale tags.
+- Add regression checks for both tag spellings, orientations, targets,
+  complete-pattern exclusion, and samples containing only placeholders.
+
 ## 2.1.0 - 2026-10-14
 
 - Merge the full user documentation into `docs/`; keep the main README concise.

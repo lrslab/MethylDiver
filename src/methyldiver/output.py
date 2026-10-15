@@ -59,6 +59,23 @@ def has_complete_metrics(row, single=False):
     return all(row[name] is not None for name in metric_columns(single)[5:])
 
 
+DEPTH_POLICY = "filter_metric_tsv_preserve_full_counts"
+
+
+def passes_metric_filter(row, single=False):
+    """Compact metric exports require complete metrics and sufficient depth."""
+    return has_complete_metrics(row, single) and bool(row["passes_min_depth"])
+
+
+def metric_filter_summary(total, complete, exported, min_depth, single=False):
+    """Report disjoint exclusions: missing metrics, then valid low-depth rows."""
+    return {"rows": exported, "excluded_missing_metrics": total - complete,
+            "excluded_below_min_depth": complete - exported,
+            "min_depth": min_depth,
+            "depth_scope": "sample" if single else "both_samples",
+            "row_filter": "complete_metrics_and_passes_min_depth"}
+
+
 def format_cell(value):
     """Keep missing values and CpG lists explicit in text result tables."""
     if value is None:
@@ -94,7 +111,7 @@ def write_analysis(result, destination, *, control_label="control", test_label="
         if not single:
             columns += ["delta_beta", "delta_entropy", "epiallele_distance"]
         columns += ["passes_min_depth"]
-        summary_rows = 0
+        summary_rows = complete_rows = 0
         with (temporary / "metrics.tsv").open("w", newline="", encoding="utf-8") as handle, \
                 (temporary / summary_name).open("w", newline="", encoding="utf-8") as summary:
             writer = csv.DictWriter(handle, fieldnames=columns, delimiter="\t", lineterminator="\n")
@@ -109,7 +126,8 @@ def write_analysis(result, destination, *, control_label="control", test_label="
                 row.update(unit.get("comparison", {}))
                 row["passes_min_depth"] = int(unit["passes_min_depth"])
                 writer.writerow({key: "NA" if value is None else value for key, value in row.items()})
-                if has_complete_metrics(row, single):
+                complete_rows += has_complete_metrics(row, single)
+                if passes_metric_filter(row, single):
                     summary_writer.writerow([format_cell(row[key]) for key in summary_columns])
                     summary_rows += 1
         with (temporary / "patterns.tsv").open("w", newline="", encoding="utf-8") as handle:
@@ -126,14 +144,15 @@ def write_analysis(result, destination, *, control_label="control", test_label="
                                          "sample": sample, "pattern": pattern, "count": count,
                                          "complete": int("." not in pattern)})
         manifest = dict(result["manifest"])
+        manifest["depth_policy"] = DEPTH_POLICY
         manifest["sample_labels"] = labels
         if not single:
             manifest["labelled_direction"] = f"{test_label} minus {control_label}"
         manifest["outputs"] = {name: {"sha256": hashlib.sha256((temporary / name).read_bytes()).hexdigest()}
                                for name in ("metrics.tsv", "patterns.tsv", summary_name)}
-        manifest["outputs"][summary_name].update(
-            rows=summary_rows, excluded_missing_metrics=len(result["units"]) - summary_rows,
-            row_filter="both_metric_values_present" if single else "all_seven_metric_values_present")
+        manifest["outputs"][summary_name].update(metric_filter_summary(
+            len(result["units"]), complete_rows, summary_rows,
+            manifest["config"]["min_depth"], single))
         (temporary / "analysis_summary.json").write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n", encoding="utf-8")
         if os.path.lexists(destination):
             raise FileExistsError(f"Output appeared during analysis: {destination}; it was not overwritten.")

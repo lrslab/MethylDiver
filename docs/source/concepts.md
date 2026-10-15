@@ -24,11 +24,13 @@ when `--keep-patterns T` is selected,
 and `patterns.tsv` for selected-region runs. Exclusion applies per unit: the
 same read can contribute to other units where all CpG calls are complete.
 The user-adjustable `--min-depth` threshold counts **complete reads in each
-sample**; it sets a reporting flag and does not remove output rows or estimates.
+sample**. Compact metric TSVs include only units passing this threshold
+(default 1). Both samples must pass for comparisons. Retained raw tables and
+the in-memory extraction API preserve all units and their depth flags.
 If a sample has no complete reads, its methylation level and entropy are missing;
 Epiallele distance requires complete reads in both samples.
 
-**Version:** 2.1.0 · **Python:** 3.10+ · **Input:** 5mC/5hmC long-read modBAM
+**Version:** 2.3.0 · **Python:** 3.10+ · **Input:** 5mC/5hmC long-read modBAM
 
 See [CHANGELOG.md](https://github.com/lxd98/MethylDiver/blob/main/CHANGELOG.md) for release notes and changes from v1.0.0,
 including `compare` replacing `analyze` and `--N` replacing `--k`.

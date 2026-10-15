@@ -14,7 +14,11 @@ methyldiver read --input MD_results/complete_patterns \
 The `.csv` extension selects CSV automatically. Use `--format csv` to select CSV
 explicitly, including when printing to the terminal. Otherwise output defaults
 to TSV. `--metrics-only` selects the three-metric table columns and omits rows
-missing any metric value; omit it to export all columns and retain missing estimates.
+missing any metric value or failing the stored `passes_min_depth` flag.
+This also applies to retained tables from older runs, so a new export may
+contain fewer rows than their original reporting-only TSV. Omit
+`--metrics-only` to export all columns and retain below-threshold and missing
+estimates. The reader uses the stored threshold; it does not choose a new one.
 Add `--chrom` to export a single chromosome/contig.
 
 With `--metrics-only`, the reader automatically reuses labels from the adjacent

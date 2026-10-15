@@ -112,6 +112,7 @@ def print_analysis_summary(output, manifest, files, elapsed):
     outputs = manifest.get("outputs", {})
     table = outputs.get("two_metrics.tsv", outputs.get("three_metrics.tsv"))
     if table is not None:
-        print(f"  Plotting table: {table['rows']:,} rows | omitted with missing metrics: {table['excluded_missing_metrics']:,}")
+        print(f"  Plotting table: {table['rows']:,} rows | omitted with missing metrics: {table['excluded_missing_metrics']:,}"
+              f" | omitted below minimum depth: {table.get('excluded_below_min_depth', 0):,}")
     print(f"  Output: {output.resolve()}")
     print(f"  Files: {', '.join(files)}")
