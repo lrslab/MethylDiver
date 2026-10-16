@@ -31,7 +31,7 @@ The output must be a **new directory**. Existing runs are not overwritten.
 The full BED can be passed directly, including large promoter collections.
 MethylDiver checks interval validity and reference compatibility, then plans
 chunks from genomic span and reference CpG-unit counts, not BED file bytes.
-It streams results to disk and uses up to `--threads` worker processes (default 1).
+It streams results to disk and uses up to `--threads` worker processes (default 8).
 Both `--regions-bed` and single/repeated `--region` support parallel workers.
 A small request may have fewer chunks than available workers.
 
@@ -49,7 +49,8 @@ Chunked processing is selected automatically when the request exceeds the span
 target or a conservative dense-count estimate. It is also selected when
 `--threads` is greater than 1 or any of `--chunk-units`, `--keep-patterns`,
 or `--chunk-manifests` is explicitly supplied. Chunked processing requires
-the `[genome]` installation extra, including for BED inputs.
+the `[genome]` installation extra, including for BED inputs. With the default
+eight workers, selected-region runs use this chunked path.
 
 ## Outputs
 
@@ -63,8 +64,8 @@ Chunked region runs use the same layout as genome runs:
 | `complete_patterns/`, `incomplete_patterns/` | Compressed Parquet metric/depth and pattern tables, retained only with `--keep-patterns T` |
 | `chunk_manifests/` | Detailed chunk extraction QC and provenance, saved as `.json.gz` only with `--chunk-manifests T` |
 
-Small default serial requests retain the original output layout below for
-compatibility. They use the in-memory extractor. Its Python `analyze_modbam`
+Small requests with explicit `--threads 1` and no explicit chunk/output
+options retain the original output layout below for compatibility. They use the in-memory extractor. Its Python `analyze_modbam`
 API still has whole-request limits; use `analyze_regions` for streaming Python
 analysis. For single samples, the plotting table is `two_metrics.tsv`.
 

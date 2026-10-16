@@ -1,6 +1,6 @@
 # Install
 
-Clone the private repository using your authorized GitHub account:
+Clone the public repository:
 
 ```bash
 git clone https://github.com/lxd98/MethylDiver.git
@@ -57,3 +57,8 @@ MethylDiver's Python dependencies into `base`.
 
 Shell commands throughout this guide assume the **MethylDiver software repository** is the working directory. The `docs/` folder contains the guide; installation commands run from the
 software repository root, one directory above `docs/`.
+
+The default analysis uses up to eight worker processes and requires the
+`[genome]` extra shown above, including for selected regions. Set `--threads 1`
+for serial execution. Small serial region requests without explicit chunk/output
+options can run without PyArrow; genome and chunked requests require it.

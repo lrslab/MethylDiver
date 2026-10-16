@@ -4,7 +4,7 @@
 methylation level, normalized pattern entropy, and Epiallele distance from
 molecular CpG patterns in modBAM files.
 
-**Version 2.3.0** · **Python 3.10+** · [Documentation](docs/README.md) · [Release notes](CHANGELOG.md)
+**Version 2.3.1** · **Python 3.10+** · [Documentation](docs/README.md) · [Release notes](CHANGELOG.md)
 
 | Command | Function |
 | --- | --- |
@@ -15,7 +15,7 @@ molecular CpG patterns in modBAM files.
 
 ## Installation
 
-Clone the private repository with an authorized GitHub account:
+Clone the repository:
 
 ```bash
 git clone https://github.com/lxd98/MethylDiver.git
@@ -42,7 +42,6 @@ methyldiver compare \
   --test /path/to/test.bam \
   --reference /path/to/reference.fa \
   --genome \
-  --threads 24 \
   --min-depth 5 \
   --output MD_results
 ```
@@ -54,9 +53,11 @@ methyldiver single \
   --input /path/to/sample.bam \
   --reference /path/to/reference.fa \
   --genome \
-  --threads 24 \
   --output MD_single_results
 ```
+
+Both commands use **8 worker processes** by default; override with `--threads INT`.
+Fewer workers are used when there are fewer chunks.
 
 Each unit contains **3 consecutive CpGs** by default; use `--N` to choose 1–10.
 The default target is **5mC at CpGs**. Use `--modification 5hmC` for 5hmC at CpGs,

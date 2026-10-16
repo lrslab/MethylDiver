@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.1 - 2026-10-16
+
+- Default to eight worker processes for `compare`, `single`, and the streaming
+  genome/region Python APIs. Explicit `--threads` / `threads` values override it.
+- Default selected-region CLI runs now use chunked processing and require the
+  `[genome]` extra. Small explicit `--threads 1` requests retain the serial path.
+- Update help, installation instructions and documentation for the public
+  GitHub repository. Metrics and extraction filters are unchanged.
+
 ## 2.3.0 - 2026-10-15
 
 - Extend `discover` with `--regions-bed` to rank nonoverlapping promoter or

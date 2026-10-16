@@ -138,6 +138,28 @@ class TestRegions(unittest.TestCase):
             self.assertIn("100.0%", run.stderr)
             self.assertTrue((output / "complete_patterns").is_dir())
 
+    def test_default_workers_and_explicit_serial_agree(self):
+        bed = self.root / "defaults.bed"
+        bed.write_text(f"chrA\t0\t{len(self.sequences['chrA'])}\tpromoter\n")
+        for command in ("compare", "single"):
+            inputs = ["--input", str(self.control)] if command == "single" else [
+                "--control", str(self.control), "--test", str(self.test)]
+            for name, scope in (("genome", ["--genome"]),
+                                ("bed", ["--regions-bed", str(bed)]),
+                                ("region", ["--region", f"chrA:0-{len(self.sequences['chrA'])}"])):
+                results = []
+                for threads, options in ((8, []), (1, ["--threads", "1"])):
+                    output = self.root / f"defaults_{command}_{name}_{threads}"
+                    run = subprocess.run([sys.executable, "-m", "methyldiver", command, *inputs,
+                        "--reference", str(self.ref), *scope, *options, "--chunk-units", "2",
+                        "--output", str(output)], capture_output=True, text=True)
+                    self.assertEqual(run.returncode, 0, run.stderr)
+                    report = json.loads((output / "analysis_summary.json").read_text())
+                    self.assertEqual(report["threads"], threads)
+                    metric = "two_metrics.tsv" if command == "single" else "three_metrics.tsv"
+                    results.append((output / metric).read_bytes())
+                self.assertEqual(results[0], results[1])
+
     def test_empty_invalid_and_failed_requests(self):
         regions = [Region("chrA", 0, len(self.sequences["chrA"]), "p")]
         for threads in (1, 2):

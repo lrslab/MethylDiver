@@ -86,7 +86,7 @@ class TestSingle(unittest.TestCase):
         ):
             output = self.root / name
             run = self.run_cli("single", "--input", self.bam, "--reference", self.ref,
-                               *selection, *label_args, "--min-depth", 5, "--output", output)
+                               *selection, *label_args, "--threads", 1, "--min-depth", 5, "--output", output)
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertIn("Plotting table: 0 rows", run.stdout)
             self.assertEqual({p.name for p in output.iterdir()},

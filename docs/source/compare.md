@@ -47,7 +47,7 @@ to work. Labels must be distinct (ignoring case), start with a letter or digit,
 and contain only letters, digits, underscores, periods, or hyphens. `delta` is
 reserved to avoid duplicate metric column names.
 
-`--threads` selects the number of worker processes (default 1).
+`--threads` selects the number of worker processes (default 8).
 `--chunk-units` controls units per chunk (default 10,000). Neighboring chunks
 share `N-1` CpGs so boundary-spanning units are retained exactly once.
 Use `--N 4` or `--N 5`, for example, to change the unit size. Omitting `--N`
@@ -116,7 +116,7 @@ region_id	chrom	start	end	cpg_anchors	control_beta	test_beta	delta_beta	control_
 ```
 
 With `--keep-patterns T`, read depths, unit size, depth flags, and other QC fields remain in `complete_patterns/`
-(or `metrics.tsv` for selected-region runs); they are not included in this summary TSV.
+(or `metrics.tsv` for small serial selected-region runs with `--threads 1`); they are not included in this summary TSV.
 These full result tables retain every unit, including those with missing metrics.
 `analysis_summary.json` records the summary TSV row count and how many units were omitted.
 Detailed pattern counts remain in the original result tables. Whole-genome tables can be large; use the

@@ -21,7 +21,7 @@ methyldiver single \
 
 For selected regions, replace `--genome` with
 `--region chr1:1000-2000` or `--regions-bed regions.bed`, keeping `--threads 24`
-for parallel workers. Large requests split automatically. Region coordinates
+to override the default eight workers. Large requests split automatically. Region coordinates
 are 0-based and end-exclusive. Both modes use sliding units of N consecutive
 reference CpGs (default 3, supported 1–10). The sample is extracted once per
 region or genome chunk; no comparison metrics are calculated.
@@ -54,7 +54,7 @@ mapping quality 20, base quality 10, and modification-call confidence 0.8.
 Processing options `--keep-patterns T` and `--chunk-manifests T` retain the same
 optional compressed folders as paired analysis; both default to False.
 Retained tables use the canonical `sample` role, e.g. `sample_beta`,
-`sample_n_complete_reads`, and `sample_000`. Small default serial region runs write
+`sample_n_complete_reads`, and `sample_000`. Small serial region runs (`--threads 1`) write
 `metrics.tsv` (all units, metrics, and depth/QC fields) and `patterns.tsv`
 (complete and incomplete counts); they do not write `chunks.tsv`. Large or parallel
 region runs use the chunked layout instead. See [region analysis](regions.md).

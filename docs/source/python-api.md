@@ -114,3 +114,6 @@ alone cannot verify this. Empty matrices with an explicit valid column count
 are supported. Empty sample rows produce NumPy `NaN`, while the scalar API
 uses `None`. Batch row totals must fit a signed 64-bit integer. Floating
 calculations use float64; totals remain integer counts.
+
+Streaming genome and region APIs default to `threads=8`; pass `threads=1`
+for serial execution. The bounded in-memory extraction APIs remain serial.

@@ -158,7 +158,7 @@ def _run_chunk(payload):
     return _write_chunk(result, stage, job["id"], chunk_manifests, keep_patterns)
 
 
-def _analyze_chunked(control, test, reference, output, *, threads=1, chunk_units=10_000,
+def _analyze_chunked(control, test, reference, output, *, threads=8, chunk_units=10_000,
                    chunk_manifests=False, keep_patterns=False,
                    control_label="control", test_label="test", sample_label="sample",
                    k=3, modification="5mC", call_threshold=0.8, min_mapq=20, min_base_quality=10, min_depth=1,
@@ -166,7 +166,7 @@ def _analyze_chunked(control, test, reference, output, *, threads=1, chunk_units
                    progress=None, status=None, regions=None, max_total_bases=100_000, regions_bed=None):
     """Write CpG units across the genome or independent selected regions.
 
-    ``threads`` controls worker processes. ``progress(done, total, units)`` is
+    ``threads`` controls worker processes (default 8). ``progress(done, total, units)`` is
     optional and runs in the parent. ``status(phase, done, total)`` reports TSV
     writing and finalization. No output is published on failure. Existing output
     directories are never reused; there is no checkpoint/resume mode.

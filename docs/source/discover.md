@@ -98,3 +98,6 @@ from methyldiver.discover import discover_regions
 discover_regions("MD_results/three_metrics.tsv", "MD_discovery_5kb",
                  window_size=5000, min_units=30, min_ed=0.5, top=100)
 ```
+
+Discovery processes the saved TSV sequentially using one worker. It has no
+`--threads` option; the eight-worker default applies to `compare` and `single`.

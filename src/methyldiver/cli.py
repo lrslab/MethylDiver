@@ -140,7 +140,7 @@ def _analysis_arguments(command, *, single=False):
         output.add_argument("--test-label", default="test", metavar="STR", help="Test label in three_metrics.tsv [%(default)s].")
 
     genome = command.add_argument_group("Processing options (genome or selected regions)")
-    genome.add_argument("--threads", type=int, default=1, metavar="INT", help="Worker processes for genome, BED, or region chunks [%(default)s].")
+    genome.add_argument("--threads", type=int, default=8, metavar="INT", help="Worker processes for genome, BED, or region chunks [%(default)s].")
     genome.add_argument("--chunk-units", type=int, metavar="INT", help="Requested units per chunk; reduced for large N; boundary units preserved [10000].")
     genome.add_argument("--chunk-manifests", type=_boolean_argument, metavar="BOOL", help="Save per-chunk metadata as .json.gz; False omits it [False].")
     genome.add_argument("--keep-patterns", type=_boolean_argument, metavar="BOOL", help="Keep complete_patterns/ and incomplete_patterns/; False removes them after TSV export [False].")

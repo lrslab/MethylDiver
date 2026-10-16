@@ -2,7 +2,7 @@ MethylDiver documentation
 =========================
 
 MethylDiver calculates methylation level, normalized pattern entropy, and
-Epiallele distance from long-read modBAMs. This guide describes version 2.3.0.
+Epiallele distance from long-read modBAMs. This guide describes version 2.3.1.
 
 Use ``compare`` for two samples, ``single`` for one sample, ``read`` to
 preview or export retained results, and ``discover`` to rank high-ED windows.

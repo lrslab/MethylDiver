@@ -1,6 +1,6 @@
 # Select 5mC or 5hmC at CpGs
 
-MethylDiver 2.3.0 supports **5mCG and 5hmCG**: 5mC and 5hmC at reference CpG
+MethylDiver 2.3.1 supports **5mCG and 5hmCG**: 5mC and 5hmC at reference CpG
 sites. Both `compare` and `single` accept the following selections:
 
 | Option | Analysis |
@@ -125,7 +125,7 @@ MD_results/
     └── analysis_summary.json
 ```
 
-Single-sample runs use `two_metrics.tsv`. Small default serial region runs use
+Single-sample runs use `two_metrics.tsv`. Small serial region runs (`--threads 1`) use
 `metrics.tsv` and `patterns.tsv` instead of `chunks.tsv`; large or parallel
 region runs use the chunked layout shown above. Retention flags apply
 independently to both target folders. The top-level summary links the two

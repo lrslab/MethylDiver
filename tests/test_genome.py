@@ -180,6 +180,7 @@ class TestGenome(unittest.TestCase):
                 self.assertEqual(run.returncode, 0, run.stderr)
                 manifest = json.loads((output / "analysis_summary.json").read_text())
                 self.assertEqual(manifest["config"]["k"], n)
+                self.assertEqual(manifest["threads"], 8)
                 with (output / "three_metrics.tsv").open() as handle:
                     rows = list(csv.DictReader(handle, delimiter="\t"))
                 self.assertEqual(len(rows), 8 - n)

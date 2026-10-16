@@ -1,6 +1,6 @@
 # MethylDiver documentation
 
-User documentation for **MethylDiver 2.3.0**, a tool for methylation level,
+User documentation for **MethylDiver 2.3.1**, a tool for methylation level,
 pattern entropy, and Epiallele distance from long-read modBAMs.
 
 [Software and quick start](https://github.com/lxd98/MethylDiver) ·
@@ -39,5 +39,5 @@ Open `docs/_build/html/index.html` in a browser. Run the build commands from the
 uses Sphinx with the Read the Docs theme. The Markdown chapters
 are also readable directly on GitHub.
 
-Documentation is maintained in the software repository and uses the same
-private repository access. No public documentation website is published.
+Documentation is freely readable in this public software repository.
+The Markdown guides can be read on GitHub or built locally as HTML.

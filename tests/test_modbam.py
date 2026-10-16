@@ -377,7 +377,7 @@ class TestModBAM(unittest.TestCase):
             output = self.root / f"cli_k{k}"
             command = [sys.executable, "-m", "methyldiver", "compare", "--control", str(inputs / "control.bam"),
                        "--test", str(inputs / "test.bam"), "--reference", str(inputs / "reference.fa"),
-                       "--regions-bed", str(inputs / "regions.bed"), "--output", str(output), "--N", str(k)]
+                       "--regions-bed", str(inputs / "regions.bed"), "--threads", "1", "--output", str(output), "--N", str(k)]
             run = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
             with (output / "metrics.tsv").open() as handle:
