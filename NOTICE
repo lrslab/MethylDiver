@@ -5,5 +5,9 @@ An unchanged copy of the original scalar metric module is retained at
 tests/fixtures/legacy_metrics.py for differential regression testing.
 Its SHA-256 is recorded in tests/fixtures/baseline.json.
 
-The supplied baseline source did not include a license grant. No open-source
-redistribution license is asserted for this repository.
+MethylDiver software and its documentation are distributed under the MIT
+License; see LICENSE.
+
+Public-source example sequencing data, reference sequences and annotations
+retain their original source terms and are not relicensed by the software
+license. Source URLs are recorded in examples/colo829_promoter/sources.tsv.

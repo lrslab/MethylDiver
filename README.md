@@ -114,3 +114,8 @@ outputs, filtering, the Python API, and worked examples.
 
 Use `methyldiver compare --help`, `methyldiver single --help`,
 `methyldiver read --help`, or `methyldiver discover --help` for command-specific help.
+
+## License
+
+MethylDiver software and documentation are available under the [MIT License](LICENSE).
+Public-source example data retain their original source terms; see [NOTICE](NOTICE).
