@@ -1,0 +1,54 @@
+{
+  "region": {
+    "chrom": "chr12",
+    "start": 53936830,
+    "end": 53941692,
+    "name": "HOXC13;HOXC13-AS",
+    "coordinates": "0-based, end-exclusive"
+  },
+  "sample_alignment_counts_before_analysis_filters": {
+    "COLO829BL_1": 87,
+    "COLO829_1": 86
+  },
+  "reference": "Complete chr12 from GRCh38_no_alt.fna; BGZF compressed; no masking or coordinate shifts.",
+  "extraction": "Every alignment overlapping the BED interval, no read subsampling or analysis filtering. Original headers and all alignment fields/tags retained.",
+  "checks": [
+    "All subset SAM records equal corresponding source SAM records.",
+    "Every chr12 reference base equal to source FASTA."
+  ],
+  "pysam_version": "0.24.0",
+  "files": {
+    "COLO829BL_1.bam": {
+      "bytes": 490186,
+      "sha256": "a7e518b518919a06eb1c6cb022496b89b5c9a01d15bb871921afd403784ee4df"
+    },
+    "COLO829BL_1.bam.bai": {
+      "bytes": 28008,
+      "sha256": "f8fdafb07858e7cab2aefd315f10666ea24818e147ec89103cc84069c9d9b446"
+    },
+    "COLO829_1.bam": {
+      "bytes": 553600,
+      "sha256": "fb8e2cf4e3a742a0884dd4a11fef531d328b80a7fb1565ba714434a2b044804e"
+    },
+    "COLO829_1.bam.bai": {
+      "bytes": 28032,
+      "sha256": "476679f25fa543458f40cf89d6c8955a64938d8641b5f0b0b279d16556a7a76d"
+    },
+    "chr12.fa.gz": {
+      "bytes": 40411926,
+      "sha256": "f69cc63cf00aa761c9c1369ca4f1aa4e22a1756f318f61fe4933c987252731cc"
+    },
+    "chr12.fa.gz.fai": {
+      "bytes": 24,
+      "sha256": "eaab48bbe626dc45305eef644a119d0cec81822ef70c5b0ffe1d0f1173e6f43b"
+    },
+    "chr12.fa.gz.gzi": {
+      "bytes": 33208,
+      "sha256": "e9bf96850995ec28cbc3c9996f7d0f82bb11959ab2f9c4a123b8cbfe73f15d18"
+    },
+    "promoter.bed": {
+      "bytes": 41,
+      "sha256": "903cc0d4b4ea0760d33635cbbd19d56f2eb0b77e47387ff7dd3750fd9d66d33c"
+    }
+  }
+}

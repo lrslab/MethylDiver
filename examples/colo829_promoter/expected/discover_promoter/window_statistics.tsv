@@ -1,0 +1,2 @@
+window_id	chrom	start	end	n_units	median_ed	mean_ed	fraction_units_ge_threshold	mean_delta_beta	mean_delta_entropy	passes_filters
+HOXC13;HOXC13-AS	chr12	53936830	53941692	191	0.6240606328392646	0.6234642532007095	0.6230366492146597	-0.00027481821130974517	-0.05436685730202599	1

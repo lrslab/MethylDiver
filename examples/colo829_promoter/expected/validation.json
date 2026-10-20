@@ -1,0 +1,14 @@
+{
+  "methyldiver_version": "2.3.1",
+  "validated_on": "2026-10-20",
+  "original_bam_comparison": "exact byte-for-byte match of three_metrics.tsv",
+  "single_compare_consistency": "all 191 shared units match for methylation and entropy in both samples",
+  "compare_table_sha256": "51bef7ea3a64367a79acc7984675c6bb60deb0ae49e5bbdacf409740b46e90e4",
+  "expected_rows": {
+    "single_COLO829BL_1/two_metrics.tsv": 192,
+    "single_COLO829_1/two_metrics.tsv": 195,
+    "compare/three_metrics.tsv": 191,
+    "discover_promoter/ranked_regions.tsv": 1,
+    "discover_promoter/window_statistics.tsv": 1
+  }
+}

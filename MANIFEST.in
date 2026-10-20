@@ -1,6 +1,8 @@
 include NOTICE
 include CHANGELOG.md
 recursive-include examples *.tsv *.py *.R
+recursive-include examples/colo829_promoter *.md *.sh *.json *.bed *.bam *.bai *.gz *.fai *.gzi
+prune examples/colo829_promoter/MD*
 recursive-include tests *.py *.json
 recursive-include docs *.md *.rst *.py *.txt
 prune docs/_build

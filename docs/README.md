@@ -19,7 +19,7 @@ pattern entropy, and Epiallele distance from long-read modBAMs.
 | [Region discovery](source/discover.md) | Descriptive high-ED window/BED ranking, candidate BEDs, and coverage checks |
 | [Command reference](source/commands.md) | All commands, options, and default values |
 | [Reading results](source/reading.md) | Parquet previews, filters, and TSV/CSV export |
-| [Examples and plotting](source/examples.md) | Synthetic inputs and individual ggplot2 PDF panels |
+| [Examples and plotting](source/examples.md) | Real COLO829 tutorial, synthetic inputs and individual ggplot2 PDF panels |
 | [Filtering and interpretation](source/methods.md) | Modification calls, read eligibility, and scientific limits |
 | [Python API](source/python-api.md) | Extraction, count vectors, coordinates, and batch calculations |
 | [Tests and provenance](source/development.md) | Regression checks and attribution |

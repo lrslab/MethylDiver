@@ -33,6 +33,16 @@ tmp/
 *.gzi
 *.parquet
 
+# Deliberately small public-data tutorial inputs only.
+!examples/colo829_promoter/inputs/*.bam
+!examples/colo829_promoter/inputs/*.bai
+!examples/colo829_promoter/inputs/*.fa.gz
+!examples/colo829_promoter/inputs/*.fai
+!examples/colo829_promoter/inputs/*.gzi
+
+# Local tutorial runs; bundled expected tables remain available.
+examples/colo829_promoter/MD*/
+
 # Machine-local configuration and credentials
 .env
 .env.*

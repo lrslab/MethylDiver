@@ -1,5 +1,27 @@
 # Examples and plotting
 
+## Start with real COLO829 data
+
+The [COLO829 promoter example](../../examples/colo829_promoter/README.md)
+includes regional modBAMs from COLO829_1 and COLO829BL_1, the complete indexed
+chr12 reference, a merged HOXC13;HOXC13-AS promoter BED and expected outputs
+(approximately 42 MB). From the repository root, after installation:
+
+```bash
+source .venv/bin/activate
+bash examples/colo829_promoter/run_example.sh MD_COLO829_example
+python examples/colo829_promoter/verify_results.py MD_COLO829_example
+```
+
+This runs both single-sample analyses, a comparison and promoter discovery.
+The tutorial produces result tables and logs only; it does not generate plots
+or require R.
+At minimum depth 5, the comparison retains 191 units and discovery reports
+one promoter with median ED approximately 0.624061. The tutorial uses units
+eligible in these two datasets, not the 115 promoter units shared by all ten
+datasets in the manuscript. It is a selected illustration, not an independent
+validation experiment. Use the supplied BED; these BAMs are regional subsets.
+
 ## Try the complete workflow with synthetic BAMs
 
 These commands create tiny indexed inputs without downloading data:

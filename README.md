@@ -31,6 +31,10 @@ To run without activating the environment, see the
 
 ## Quick usage
 
+For a runnable real-data example, see the
+[COLO829 promoter tutorial](examples/colo829_promoter/README.md). It includes
+two regional modBAMs, an indexed reference, commands and verified expected outputs.
+
 Inputs are coordinate-sorted, indexed **modBAMs containing 5mC and/or 5hmC calls**
 and the matching reference FASTA with its `.fai` index.
 

@@ -1,0 +1,7 @@
+id	url	sha256
+COLO829_1.bam	https://ont-open-data.s3.amazonaws.com/rrms_2022.07/basecalling/bonito_remora/Benchmarking_ASmethylation_COLO829_1-5/COLO829_1/bonito_calls.bam	ac606d9c27ec283fbe31a3b683d267d3d82a9ccbbb471fb7b71efba2d10b4579
+COLO829_1.bam.bai	https://ont-open-data.s3.amazonaws.com/rrms_2022.07/basecalling/bonito_remora/Benchmarking_ASmethylation_COLO829_1-5/COLO829_1/bonito_calls.bam.bai	902841664b4f25270de8bc910cf60f46dae7d2d95b96f2db225b1afc7a9524c9
+COLO829BL_1.bam	https://ont-open-data.s3.amazonaws.com/rrms_2022.07/basecalling/bonito_remora/Benchmarking_ASmethylation_COLO829BL_1-5/COLO829BL_1/bonito_calls.bam	e1b34ca885867fda55e8421450e25cc62c6233c5a8e425fc5dd381c98a01fb4b
+COLO829BL_1.bam.bai	https://ont-open-data.s3.amazonaws.com/rrms_2022.07/basecalling/bonito_remora/Benchmarking_ASmethylation_COLO829BL_1-5/COLO829BL_1/bonito_calls.bam.bai	1b9e0b6f4d99bb2c6e73d8aca409c71897853e621dfbd87b54d0b01a22a97311
+GRCh38_no_alt.fna	https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz	9cce8b926416dd96b152deea85188495b75f7ac8d634cc723a017067be8702b7
+gencode.v49.primary_assembly.annotation.gtf	https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_49/gencode.v49.primary_assembly.annotation.gtf.gz	8eb596086228540c93ccf56fbb6601fd99f19a6df2cecdde239af423e5db0729
